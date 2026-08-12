@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogHeader } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SelectField } from "@/components/ui/select-field";
 import { BaoError } from "@/lib/bao-client";
 import {
   useConfigureSshCa,
@@ -174,10 +175,14 @@ function SignSection({ mount }: { mount: string }) {
         }}
       >
         <Field label="Role">
-          <select value={role} onChange={(e) => setRole(e.target.value)} className="h-9 rounded-md border bg-transparent px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-            <option value="">— select —</option>
-            {(roles.data ?? []).map((r) => <option key={r} value={r}>{r}</option>)}
-          </select>
+          <SelectField
+            onValueChange={setRole}
+            options={[
+              { value: "", label: "— select —" },
+              ...(roles.data ?? []).map((item) => ({ value: item, label: item })),
+            ]}
+            value={role}
+          />
         </Field>
         <Field label="SSH public key">
           <textarea

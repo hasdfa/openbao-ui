@@ -2,9 +2,18 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { API_BASE } from "@/lib/base-path";
+import { readHttpEnvelope } from "@/lib/http/client";
 
-import { buildAccessPolicy, type AccessLevel, type EnvTarget } from "@/lib/access-policy";
-import { resolveEnvs, type EnvSelector } from "@/lib/access-roles";
+import {
+  buildAccessPolicy,
+  type AccessLevel,
+  type EnvTarget,
+} from "@/lib/access-policy";
+import {
+  isEnvSelector,
+  resolveEnvs,
+  type EnvSelector,
+} from "@/lib/access-roles";
 import { baoFetch, BaoError } from "@/lib/bao-client";
 import { useNamespace } from "@/lib/namespace";
 
@@ -31,7 +40,46 @@ export type IssuedCred = {
   mount: string;
 };
 
-const stripSlash = (s: string) => s.replace(/^\/+|\/+$/g, "");
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return (
+    Array.isArray(value) && value.every((item) => typeof item === "string")
+  );
+}
+
+function isMaterializedRole(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.env === "string" &&
+    typeof value.role === "string" &&
+    typeof value.policy === "string"
+  );
+}
+
+export function isAppCredential(value: unknown): value is AppCredential {
+  if (!isRecord(value) || "secretId" in value || "roleId" in value)
+    return false;
+  return (
+    typeof value.app === "string" &&
+    (value.level === "viewer" ||
+      value.level === "editor" ||
+      value.level === "admin") &&
+    isEnvSelector(value.env) &&
+    typeof value.mount === "string" &&
+    (value.ttl === undefined || typeof value.ttl === "string") &&
+    isStringArray(value.paths) &&
+    Array.isArray(value.roles) &&
+    value.roles.every(isMaterializedRole) &&
+    typeof value.createdAt === "number" &&
+    Number.isFinite(value.createdAt)
+  );
+}
+
+const stripSlash = (value: string) => value.replace(/^\/+|\/+$/g, "");
+
 const slug = (s: string) =>
   stripSlash(s)
     .replace(/[^a-zA-Z0-9_.-]+/g, "-")
@@ -47,7 +95,8 @@ export function credNames(app: string, env: string, level: AccessLevel) {
 }
 
 /** A stable per-environment identity for naming (folders layout disambiguated). */
-export const envIdent = (e: EnvTarget) => (e.envPath ? `${e.mount}-${e.envPath}` : e.mount);
+export const envIdent = (e: EnvTarget) =>
+  e.envPath ? `${e.mount}-${e.envPath}` : e.mount;
 
 // --- store ---
 
@@ -56,12 +105,11 @@ export function useAppCredentials() {
   return useQuery({
     queryKey: ["app-credentials", namespace],
     queryFn: async (): Promise<AppCredential[]> => {
-      const res = await fetch(`${API_BASE}/app-credentials`, {
+      const response = await fetch(`${API_BASE}/app-credentials`, {
         headers: { "x-vault-namespace": namespace },
       });
-      if (!res.ok) return [];
-      const data = (await res.json()) as { creds?: AppCredential[] };
-      return data.creds ?? [];
+      const data = await readHttpEnvelope<{ creds: AppCredential[] }>(response);
+      return data.creds;
     },
   });
 }
@@ -69,15 +117,15 @@ export function useAppCredentials() {
 function useSaveAppCredentials() {
   const { namespace } = useNamespace();
   return async (creds: AppCredential[]) => {
-    const res = await fetch(`${API_BASE}/app-credentials`, {
+    const response = await fetch(`${API_BASE}/app-credentials`, {
       method: "PUT",
-      headers: { "Content-Type": "application/json", "x-vault-namespace": namespace },
+      headers: {
+        "Content-Type": "application/json",
+        "x-vault-namespace": namespace,
+      },
       body: JSON.stringify({ creds }),
     });
-    if (!res.ok) {
-      const data = (await res.json().catch(() => ({}))) as { errors?: string[] };
-      throw new Error(data.errors?.[0] ?? `Request failed (${res.status})`);
-    }
+    await readHttpEnvelope<{ creds: AppCredential[] }>(response);
   };
 }
 
@@ -93,7 +141,12 @@ async function ensureApprole(mount: string, namespace: string) {
       body: { type: "approle" },
     });
   } catch (err) {
-    if (!(err instanceof BaoError && /already in use|path is already/i.test(err.errors.join(" ")))) {
+    if (
+      !(
+        err instanceof BaoError &&
+        /already in use|path is already/i.test(err.errors.join(" "))
+      )
+    ) {
       throw err;
     }
   }
@@ -124,7 +177,8 @@ export function useIssueAppCredential() {
       if (!app) throw new Error("App name is required");
       const mount = stripSlash(vars.mount || "approle");
       const envs = resolveEnvs(vars.env);
-      if (envs.length === 0) throw new Error("No environments matched this selection");
+      if (envs.length === 0)
+        throw new Error("No environments matched this selection");
 
       await ensureApprole(mount, namespace);
 
@@ -133,7 +187,11 @@ export function useIssueAppCredential() {
       for (const e of envs) {
         const ident = envIdent(e);
         const { role, policy } = credNames(app, ident, vars.level);
-        const policyHcl = buildAccessPolicy({ envs: [e], level: vars.level, paths: vars.paths });
+        const policyHcl = buildAccessPolicy({
+          envs: [e],
+          level: vars.level,
+          paths: vars.paths,
+        });
         await baoFetch({
           path: `sys/policies/acl/${policy}`,
           method: "POST",
@@ -144,7 +202,11 @@ export function useIssueAppCredential() {
           path: `auth/${mount}/role/${role}`,
           method: "POST",
           namespace,
-          body: { token_policies: [policy], token_ttl: vars.ttl || "1h", token_max_ttl: "4h" },
+          body: {
+            token_policies: [policy],
+            token_ttl: vars.ttl || "1h",
+            token_max_ttl: "4h",
+          },
         });
         const rid = await baoFetch<{ data: { role_id: string } }>({
           path: `auth/${mount}/role/${role}/role-id`,
@@ -156,7 +218,14 @@ export function useIssueAppCredential() {
           namespace,
           body: {},
         });
-        issued.push({ env: ident, role, roleId: rid.data.role_id, secretId: sid.data.secret_id, policy, mount });
+        issued.push({
+          env: ident,
+          role,
+          roleId: rid.data.role_id,
+          secretId: sid.data.secret_id,
+          policy,
+          mount,
+        });
         roles.push({ env: ident, role, policy });
       }
 
@@ -170,7 +239,10 @@ export function useIssueAppCredential() {
         roles,
         createdAt: Date.now(),
       };
-      await save([...vars.existing.filter((c) => !sameCred(c, app, vars.env)), definition]);
+      await save([
+        ...vars.existing.filter((c) => !sameCred(c, app, vars.env)),
+        definition,
+      ]);
       return { definition, issued };
     },
     onSuccess: () => {
@@ -185,7 +257,10 @@ export function useIssueAppCredential() {
 export function useRotateSecretId() {
   const { namespace } = useNamespace();
   return useMutation({
-    mutationFn: async (vars: { mount: string; role: string }): Promise<string> => {
+    mutationFn: async (vars: {
+      mount: string;
+      role: string;
+    }): Promise<string> => {
       const res = await baoFetch<{ data: { secret_id: string } }>({
         path: `auth/${stripSlash(vars.mount)}/role/${vars.role}/secret-id`,
         method: "POST",
@@ -204,7 +279,10 @@ export function useRevokeAppCredential() {
   const save = useSaveAppCredentials();
   return useMutation({
     meta: { success: "App credential revoked", silentError: true },
-    mutationFn: async (vars: { cred: AppCredential; existing: AppCredential[] }) => {
+    mutationFn: async (vars: {
+      cred: AppCredential;
+      existing: AppCredential[];
+    }) => {
       for (const r of vars.cred.roles) {
         await baoFetch({
           path: `auth/${stripSlash(vars.cred.mount)}/role/${r.role}`,
@@ -217,7 +295,9 @@ export function useRevokeAppCredential() {
           namespace,
         }).catch(() => {});
       }
-      await save(vars.existing.filter((c) => !sameCred(c, vars.cred.app, vars.cred.env)));
+      await save(
+        vars.existing.filter((c) => !sameCred(c, vars.cred.app, vars.cred.env)),
+      );
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["app-credentials", namespace] });

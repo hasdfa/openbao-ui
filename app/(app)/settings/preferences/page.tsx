@@ -5,6 +5,7 @@ import { Monitor, Moon, Sun } from "lucide-react";
 import { ThemePref, useTheme } from "@/components/theme";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { SelectField } from "@/components/ui/select-field";
 import { usePreferences } from "@/lib/preferences";
 import { cn } from "@/lib/utils";
 
@@ -122,29 +123,29 @@ export default function PreferencesPage() {
       <Section title="Notifications & refresh">
         <div className="flex items-center justify-between gap-4">
           <Label className="flex-1">Toast duration</Label>
-          <select
-            value={prefs.toastDurationMs}
-            onChange={(e) => setPref("toastDurationMs", Number(e.target.value))}
-            className="h-9 rounded-md border bg-transparent px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <option value={2000}>2 seconds</option>
-            <option value={4000}>4 seconds</option>
-            <option value={6000}>6 seconds</option>
-            <option value={10000}>10 seconds</option>
-          </select>
+          <SelectField
+            onValueChange={(value) => setPref("toastDurationMs", Number(value))}
+            options={[
+              { value: "2000", label: "2 seconds" },
+              { value: "4000", label: "4 seconds" },
+              { value: "6000", label: "6 seconds" },
+              { value: "10000", label: "10 seconds" },
+            ]}
+            value={String(prefs.toastDurationMs)}
+          />
         </div>
         <div className="flex items-center justify-between gap-4">
           <Label className="flex-1">Audit log refresh</Label>
-          <select
-            value={prefs.auditRefreshMs}
-            onChange={(e) => setPref("auditRefreshMs", Number(e.target.value))}
-            className="h-9 rounded-md border bg-transparent px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <option value={5000}>Every 5s</option>
-            <option value={10000}>Every 10s</option>
-            <option value={30000}>Every 30s</option>
-            <option value={0}>Off</option>
-          </select>
+          <SelectField
+            onValueChange={(value) => setPref("auditRefreshMs", Number(value))}
+            options={[
+              { value: "5000", label: "Every 5s" },
+              { value: "10000", label: "Every 10s" },
+              { value: "30000", label: "Every 30s" },
+              { value: "0", label: "Off" },
+            ]}
+            value={String(prefs.auditRefreshMs)}
+          />
         </div>
       </Section>
 

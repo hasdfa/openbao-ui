@@ -1,66 +1,73 @@
 import { open, readFile, stat } from "node:fs/promises";
 
-import { NextResponse } from "next/server";
-
+import {
+  asJsonResponse,
+  Dependency,
+  forbidden,
+  serviceUnavailable,
+  success,
+  unauthorized,
+} from "@/lib/http/response";
+import { OpenBaoRequestError } from "@/lib/openbao";
+import { getValidatedToken } from "@/lib/session";
+import { isOperator } from "@/lib/ui-admin";
 import { parseAuditLog } from "@/lib/audit-parse";
-import { openbao } from "@/lib/openbao";
-import { getToken } from "@/lib/session";
 
-const AUDIT_LOG_PATH = process.env.AUDIT_LOG_PATH ?? "/bao/file/audit.log";
-// Cap how much of the (append-only) audit log we read per request, so memory
-// and latency stay bounded as the file grows under the UI's auto-refresh.
-const MAX_READ_BYTES = 512 * 1024;
+const AuditLogPath = process.env.AUDIT_LOG_PATH ?? "/bao/file/audit.log";
+const MaxAuditReadBytes = 512 * 1024;
 
-/** Read the whole file, or just the trailing window for large files. */
 async function readRecentAuditLog(): Promise<string> {
-  const { size } = await stat(AUDIT_LOG_PATH);
-  if (size <= MAX_READ_BYTES) return readFile(AUDIT_LOG_PATH, "utf8");
-
-  const fh = await open(AUDIT_LOG_PATH, "r");
+  const { size } = await stat(AuditLogPath);
+  if (size <= MaxAuditReadBytes) return readFile(AuditLogPath, "utf8");
+  const file = await open(AuditLogPath, "r");
   try {
-    const buf = Buffer.alloc(MAX_READ_BYTES);
-    await fh.read(buf, 0, MAX_READ_BYTES, size - MAX_READ_BYTES);
-    const text = buf.toString("utf8");
-    // Drop the partial first line so parseAuditLog only sees whole entries.
-    const nl = text.indexOf("\n");
-    return nl >= 0 ? text.slice(nl + 1) : text;
+    const buffer = Buffer.alloc(MaxAuditReadBytes);
+    await file.read(buffer, 0, MaxAuditReadBytes, size - MaxAuditReadBytes);
+    const content = buffer.toString("utf8");
+    const firstLineEnd = content.indexOf("\n");
+    return firstLineEnd >= 0 ? content.slice(firstLineEnd + 1) : content;
   } finally {
-    await fh.close();
+    await file.close();
   }
 }
+function isMissingAuditLog(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === "ENOENT"
+  );
+}
 
-/**
- * GET /ui2/api/audit — reads the file audit device's log (which lives on the
- * same container as the BFF) and returns the most recent normalized entries.
- * `available:false` means no audit log file exists (e.g. dev mode / not configured).
- */
 export async function GET() {
-  const token = await getToken();
-  if (!token) {
-    return NextResponse.json({ errors: ["not authenticated"] }, { status: 401 });
-  }
-
-  // Audit records can contain sensitive operational detail — enforce an actual
-  // OpenBao capability check on sys/audit rather than relying on UI tab gating.
+  let token: string | undefined;
   try {
-    const caps = await openbao.capabilitiesSelf(token, ["sys/audit"]);
-    const allowed =
-      (caps.data?.["sys/audit"] as string[] | undefined) ??
-      caps.data?.capabilities ??
-      [];
-    if (!allowed.some((c) => ["read", "list", "sudo", "root"].includes(c))) {
-      return NextResponse.json({ errors: ["forbidden"] }, { status: 403 });
-    }
-  } catch {
-    return NextResponse.json({ errors: ["forbidden"] }, { status: 403 });
+    token = await getValidatedToken();
+  } catch (error) {
+    if (error instanceof OpenBaoRequestError)
+      return asJsonResponse(serviceUnavailable(Dependency.OpenBao));
+    throw error;
   }
+  if (!token) return asJsonResponse(unauthorized());
 
-  let content: string;
   try {
-    content = await readRecentAuditLog();
-  } catch {
-    return NextResponse.json({ available: false, records: [] });
+    if (!(await isOperator(token))) return asJsonResponse(forbidden());
+  } catch (error) {
+    if (error instanceof OpenBaoRequestError)
+      return asJsonResponse(serviceUnavailable(Dependency.OpenBao));
+    throw error;
   }
 
-  return NextResponse.json({ available: true, records: parseAuditLog(content) });
+  try {
+    return asJsonResponse(
+      success({
+        available: true,
+        records: parseAuditLog(await readRecentAuditLog()),
+      }),
+    );
+  } catch (error) {
+    if (isMissingAuditLog(error))
+      return asJsonResponse(success({ available: false, records: [] }));
+    return asJsonResponse(serviceUnavailable(Dependency.Storage));
+  }
 }

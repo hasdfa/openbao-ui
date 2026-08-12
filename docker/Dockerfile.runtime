@@ -6,13 +6,12 @@
 #   openbao.hcl   -> docker/openbao.hcl
 # The OpenBao binary is copied from the official image, tagged to match this
 # exact OpenBao version (tag parity). CI/publish pass OPENBAO_VERSION explicitly
-# (from the repo's `.openbao-version` pin); this default is the local fallback.
-# Override OPENBAO_IMAGE to pin a digest instead.
-ARG OPENBAO_VERSION=2.5.5
-ARG OPENBAO_IMAGE=quay.io/openbao/openbao:${OPENBAO_VERSION}
+# (from the repo's `.openbao-version` pin); the immutable image reference lives
+# in `.openbao-image` and CI passes it explicitly.
+ARG OPENBAO_IMAGE=quay.io/openbao/openbao@sha256:5b2486ab0fb90bbc788cc345b0a08616dfb375873ee8be5df3a2fd4d378a67e0
 FROM ${OPENBAO_IMAGE} AS openbao
 
-FROM node:22-alpine AS runner
+FROM node:22-alpine@sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2 AS runner
 WORKDIR /app
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
@@ -20,7 +19,8 @@ ENV NODE_ENV=production \
     PORT=3000 \
     HOSTNAME=0.0.0.0
 
-COPY --from=openbao /bin/bao /usr/local/bin/bao
+# OpenBao 2.6+ installs `bao` at /usr/bin/bao.
+COPY --from=openbao /usr/bin/bao /usr/local/bin/bao
 COPY app/ ./
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY openbao.hcl /bao/config/openbao.hcl
@@ -29,8 +29,6 @@ RUN chmod +x /usr/local/bin/entrypoint.sh \
   && addgroup -S bao && adduser -S bao -G bao \
   && chown -R bao:bao /bao /app
 
-ENV BAO_DEV=1
-ENV BAO_DEV_ROOT_TOKEN_ID=root
 EXPOSE 3000
 USER bao
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

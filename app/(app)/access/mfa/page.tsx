@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogHeader } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SelectField } from "@/components/ui/select-field";
 import { BaoError } from "@/lib/bao-client";
 import { useAuthMethods } from "@/lib/auth-methods";
 import {
@@ -192,20 +193,32 @@ function Enforcements() {
           >
             <Field label="Name"><Input value={name} onChange={(e) => setName(e.target.value)} className="font-mono" autoFocus /></Field>
             <Field label="MFA method">
-              <select value={methodId} onChange={(e) => setMethodId(e.target.value)} className="h-9 rounded-md border bg-transparent px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                <option value="">— select —</option>
-                {(methods.data ?? []).map((mth) => (
-                  <option key={mth.id} value={mth.id}>{mth.issuer || "TOTP"} ({mth.id.slice(0, 8)}…)</option>
-                ))}
-              </select>
+              <SelectField
+                onValueChange={setMethodId}
+                options={[
+                  { value: "", label: "— select —" },
+                  ...(methods.data ?? []).map((method) => ({
+                    value: method.id,
+                    label: `${method.issuer || "TOTP"} (${method.id.slice(0, 8)}…)`,
+                  })),
+                ]}
+                value={methodId}
+              />
             </Field>
             <Field label="Apply to auth mount (accessor)">
-              <select value={accessor} onChange={(e) => setAccessor(e.target.value)} className="h-9 rounded-md border bg-transparent px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                <option value="">— any —</option>
-                {(auth.data ?? []).filter((a) => a.path !== "token/").map((a) => (
-                  <option key={a.path} value={a.accessor}>{a.path} ({a.type})</option>
-                ))}
-              </select>
+              <SelectField
+                onValueChange={setAccessor}
+                options={[
+                  { value: "", label: "— any —" },
+                  ...(auth.data ?? [])
+                    .filter((authMethod) => authMethod.path !== "token/" && Boolean(authMethod.accessor))
+                    .map((authMethod) => ({
+                      value: authMethod.accessor!,
+                      label: `${authMethod.path} (${authMethod.type})`,
+                    })),
+                ]}
+                value={accessor}
+              />
             </Field>
             {error ? <p className="text-sm text-destructive">{error}</p> : null}
             <div className="flex justify-end gap-2">

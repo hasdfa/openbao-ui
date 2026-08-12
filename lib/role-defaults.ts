@@ -11,6 +11,18 @@ export type RoleTemplate = {
   policy: string; // ACL policy HCL
 };
 
+export function isRoleTemplate(value: unknown): value is RoleTemplate {
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    return false;
+  const template = value as Record<string, unknown>;
+  return (
+    typeof template.name === "string" &&
+    typeof template.description === "string" &&
+    typeof template.color === "string" &&
+    typeof template.policy === "string"
+  );
+}
+
 export const DEFAULT_ROLE_TEMPLATES: RoleTemplate[] = [
   {
     name: "admin",

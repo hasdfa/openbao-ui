@@ -3,6 +3,7 @@
 import * as React from "react";
 
 import { Button } from "@/components/ui/button";
+import { SelectField } from "@/components/ui/select-field";
 import { Disclosure } from "@/components/ui/disclosure";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -93,15 +94,11 @@ function LoggingCard() {
       <div className="flex items-end gap-2">
         <div className="flex flex-col gap-2">
           <span className="text-sm text-muted-foreground">Level</span>
-          <select
+          <SelectField
+            onValueChange={setLevel2}
+            options={LOG_LEVELS.map((logLevel) => ({ value: logLevel, label: logLevel }))}
             value={level}
-            onChange={(e) => setLevel2(e.target.value)}
-            className="h-9 rounded-md border bg-transparent px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            {LOG_LEVELS.map((l) => (
-              <option key={l} value={l}>{l}</option>
-            ))}
-          </select>
+          />
         </div>
         <Button size="sm" onClick={() => setLevel.mutate(level)} disabled={setLevel.isPending}>
           Apply

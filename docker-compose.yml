@@ -1,5 +1,5 @@
-# Convenience wrapper around the single combined image (UI + OpenBao).
-# Build once, run the whole stack: `docker compose up --build`.
+# Production-safe wrapper around the single combined image (UI + OpenBao).
+# Initialize and unseal OpenBao before serving production traffic.
 services:
   openbao-ui:
     build:
@@ -7,12 +7,18 @@ services:
     image: openbao-ui:latest
     # PID 1 init so the two child processes (OpenBao + Next.js) are reaped cleanly.
     init: true
+    pids_limit: 256
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     environment:
-      # Dev mode: in-memory, auto-unsealed, fixed root token. Log in at
-      # http://localhost:3000/ with the token below.
-      BAO_DEV: "1"
-      BAO_DEV_ROOT_TOKEN_ID: "root"
-    # Dev mode keeps no state; no volumes needed. For non-dev runs, set
-    # BAO_DEV=0 and mount a volume at /bao/file plus an init/unseal step.
+      BAO_DEV: "0"
+      OPENBAO_UI_PUBLIC_URL: ${OPENBAO_UI_PUBLIC_URL:?set the public HTTPS origin in .env}
+    volumes:
+      - openbao-data:/bao/file
+
+volumes:
+  openbao-data:

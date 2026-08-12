@@ -127,7 +127,7 @@ export default function SecretsPage() {
       />
 
       {isLoading ? (
-        <ul className="grid gap-3 sm:grid-cols-2">
+        <ul className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3 sm:grid-cols-2">
           {Array.from({ length: 4 }).map((_, i) => (
             <li key={i} className="flex items-start gap-3 rounded-xl border bg-card p-4 shadow-sm">
               <Skeleton className="size-9 rounded-lg" />
@@ -143,7 +143,7 @@ export default function SecretsPage() {
           Could not load mounts. Check your token&apos;s permissions.
         </p>
       ) : (
-        <ul className="grid gap-3 sm:grid-cols-2">
+        <ul className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3 sm:grid-cols-2">
           {Object.entries(mounts ?? {})
             // surface KV "environments" ahead of system engines (cubbyhole/identity/sys)
             .sort(([, a], [, b]) => {

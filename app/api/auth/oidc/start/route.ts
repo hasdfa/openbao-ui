@@ -1,65 +1,112 @@
 import { cookies } from "next/headers";
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 
 import { API_BASE } from "@/lib/base-path";
 import { isCrossSiteRequest } from "@/lib/csrf";
+import {
+  asJsonResponse,
+  Dependency,
+  forbidden,
+  invalidRequest,
+  payloadTooLarge,
+  rateLimited,
+  serviceUnavailable,
+  success,
+} from "@/lib/http/response";
 import { openbao, OpenBaoRequestError } from "@/lib/openbao";
+import { FixedWindowRateLimiter } from "@/lib/rate-limit";
+import { parseJsonBody, RequestBodyError } from "@/lib/request-body";
 import { requestOrigin } from "@/lib/request-origin";
+import { getOidcTransactionCookieNames } from "@/lib/session";
 
-/**
- * POST /ui2/api/auth/oidc/start  { mount?, role? }
- * Returns the provider auth URL to redirect to, and stashes the client nonce +
- * mount in httpOnly cookies for the callback to use.
- *
- * NOTE: requires an OIDC auth method configured in OpenBao with this app's
- * callback registered as an allowed redirect URI.
- */
+const oidcStartRateLimiter = new FixedWindowRateLimiter(20, 60_000);
+const SafeAuthMount = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
+const MaxOidcStartBodyBytes = 4 * 1024;
+type OidcStartPayload = { mount?: string; role?: string };
+
+function isSafeAuthMount(value: unknown): value is string {
+  return typeof value === "string" && SafeAuthMount.test(value);
+}
+
+function isOidcStartPayload(value: unknown): value is OidcStartPayload {
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    return false;
+  const payload = value as Record<string, unknown>;
+  return (
+    (payload.mount === undefined || typeof payload.mount === "string") &&
+    (payload.role === undefined || typeof payload.role === "string")
+  );
+}
+
+function oidcRateLimitKey(req: Request): string {
+  return (
+    req.headers.get("x-forwarded-for")?.split(",", 1)[0]?.trim() || "unknown"
+  );
+}
+function bodyFailure(error: unknown) {
+  return error instanceof RequestBodyError && error.status === 413
+    ? payloadTooLarge("The OIDC start request body is too large.")
+    : invalidRequest("The request body must be valid JSON.");
+}
+
 export async function POST(req: NextRequest) {
-  if (isCrossSiteRequest(req)) {
-    return NextResponse.json({ error: "cross-site request blocked" }, { status: 403 });
-  }
-  let body: { mount?: string; role?: string };
+  if (isCrossSiteRequest(req))
+    return asJsonResponse(forbidden("Cross-site requests are not allowed."));
+  let body: OidcStartPayload;
   try {
-    body = await req.json();
-  } catch {
-    body = {};
-  }
-  const mount = body.mount || "oidc";
-  const nonce = crypto.randomUUID();
-  // Must match the role's allowed_redirect_uris, which the setup wizard registers
-  // from the browser's window.location.origin — so derive the same browser-facing
-  // origin here, NOT the standalone server's internal 0.0.0.0 bind address.
-  const redirectUri = `${requestOrigin(req)}${API_BASE}/auth/oidc/callback`;
-
-  try {
-    const res = await openbao.oidcAuthURL(mount, body.role, redirectUri, nonce);
-    // OpenBao returns 200 with an empty auth_url (no error) when the role's
-    // allowed_redirect_uris doesn't include this exact URI, or role_type isn't
-    // "oidc". Surface that as an actionable error instead of a silent dead-end.
-    if (!res.data.auth_url) {
-      return NextResponse.json(
-        {
-          error: `OpenBao returned no authorization URL. Add "${redirectUri}" to the "${body.role || "default"}" role's allowed_redirect_uris and ensure role_type is "oidc".`,
-        },
-        { status: 400 },
+    const parsed = await parseJsonBody<unknown>(req, MaxOidcStartBodyBytes);
+    if (!isOidcStartPayload(parsed)) {
+      return asJsonResponse(
+        invalidRequest("The OIDC start request body is invalid."),
       );
     }
+    body = parsed;
+  } catch (error) {
+    return asJsonResponse(bodyFailure(error));
+  }
+  const mount = body.mount ?? "oidc";
+  if (
+    !isSafeAuthMount(mount) ||
+    (body.role !== undefined && !isSafeAuthMount(body.role))
+  ) {
+    return asJsonResponse(invalidRequest("OIDC mount or role is invalid."));
+  }
+  if (!oidcStartRateLimiter.consume(oidcRateLimitKey(req)))
+    return asJsonResponse(rateLimited());
+
+  const nonce = crypto.randomUUID();
+  const redirectUri = `${requestOrigin(req)}${API_BASE}/auth/oidc/callback`;
+  try {
+    const result = await openbao.oidcAuthURL(
+      mount,
+      body.role,
+      redirectUri,
+      nonce,
+    );
+    if (!result.data.auth_url)
+      return asJsonResponse(
+        invalidRequest("OpenBao did not return an authorization URL."),
+      );
     const store = await cookies();
-    const opts = {
+    const cookieOptions = {
       httpOnly: true as const,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax" as const,
       path: "/",
       maxAge: 300,
     };
-    store.set("oidc_nonce", nonce, opts);
-    store.set("oidc_mount", mount, opts);
-    return NextResponse.json({ authUrl: res.data.auth_url });
-  } catch (err) {
-    const msg =
-      err instanceof OpenBaoRequestError
-        ? err.errors.join(", ")
-        : "Could not start OIDC login";
-    return NextResponse.json({ error: msg }, { status: 400 });
+    const transactionCookies = getOidcTransactionCookieNames();
+    store.set(transactionCookies.nonce, nonce, cookieOptions);
+    store.set(transactionCookies.mount, mount, cookieOptions);
+    return asJsonResponse(success({ authUrl: result.data.auth_url }));
+  } catch (error) {
+    if (error instanceof OpenBaoRequestError) {
+      return asJsonResponse(
+        error.status === 400 || error.status === 403
+          ? invalidRequest("OpenBao rejected the OIDC configuration.")
+          : serviceUnavailable(Dependency.OpenBao),
+      );
+    }
+    return asJsonResponse(serviceUnavailable(Dependency.OpenBao));
   }
 }

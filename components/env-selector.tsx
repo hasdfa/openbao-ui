@@ -4,6 +4,7 @@ import * as React from "react";
 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SelectField } from "@/components/ui/select-field";
 import { type EnvSelector } from "@/lib/access-roles";
 import { useMounts } from "@/lib/kv";
 import { labelKey, useLabels } from "@/lib/labels";
@@ -13,8 +14,6 @@ type Mode = "mounts" | "folders";
 
 const split = (s: string) => s.split(",").map((x) => x.trim()).filter(Boolean);
 
-const selectCls =
-  "h-9 rounded-md border bg-transparent px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 /**
  * Reusable environment-scope picker: pick specific environments (mounts) or env
@@ -90,9 +89,11 @@ export function EnvScopePicker({
         )
       ) : (
         <div className="grid gap-2 sm:grid-cols-2">
-          <select value={folderMount} onChange={(e) => setFolderMount(e.target.value)} className={selectCls}>
-            {kvMounts.map((m) => (<option key={m} value={m}>{envName(m)}</option>))}
-          </select>
+          <SelectField
+            onValueChange={setFolderMount}
+            options={kvMounts.map((mount) => ({ value: mount, label: envName(mount) }))}
+            value={folderMount}
+          />
           <Input value={foldersText} onChange={(e) => setFoldersText(e.target.value)} className="font-mono" placeholder="dev, staging, prod" />
         </div>
       )}

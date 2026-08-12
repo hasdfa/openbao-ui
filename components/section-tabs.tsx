@@ -13,7 +13,7 @@ export function SectionTabs({ tabs }: { tabs: { href: string; label: string }[] 
   const rel = pathname.replace(new RegExp(`^${BASE_PATH}`), "") || "/";
 
   return (
-    <nav className="-mb-px flex gap-1 overflow-x-auto">
+    <nav className="min-w-0 -mb-px flex gap-1 overflow-x-auto pb-px [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {tabs.map((t) => {
         const active = rel === t.href;
         return (

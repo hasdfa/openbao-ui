@@ -11,6 +11,7 @@ import { Dialog, DialogHeader } from "@/components/ui/dialog";
 import { Disclosure } from "@/components/ui/disclosure";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SelectField } from "@/components/ui/select-field";
 import { BaoError } from "@/lib/bao-client";
 import { oidcCallbackUrl, useUiConfig } from "@/lib/ui-config";
 import {
@@ -552,18 +553,14 @@ function EnableDialog({
         }}
       >
         <Field label="Type">
-          <select
-            value={type}
-            onChange={(e) => {
-              setType(e.target.value);
-              setPath(e.target.value);
+          <SelectField
+            onValueChange={(value) => {
+              setType(value);
+              setPath(value);
             }}
-            className="h-9 rounded-md border bg-transparent px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            {ENABLE_TYPES.map((t) => (
-              <option key={t} value={t}>{t}</option>
-            ))}
-          </select>
+            options={ENABLE_TYPES.map((authType) => ({ value: authType, label: authType }))}
+            value={type}
+          />
         </Field>
         <Field label="Mount path">
           <Input value={path} onChange={(e) => setPath(e.target.value)} className="font-mono" />

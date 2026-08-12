@@ -3,8 +3,19 @@ node_modules
 .git
 .gitignore
 npm-debug.log*
-.env
-.env*.local
+# Runtime secrets, state, local metadata and credentials never belong in an image
+# build context. The tracked template remains available to documentation/setup.
+.env*
+!.env.example
+.npmrc
+.data/
+data/
+ci-ctx/
+*.pem
+*.key
+*.p12
+*.pfx
+.github/
 README.md
 docker-compose.yml
 .vscode

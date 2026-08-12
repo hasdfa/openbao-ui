@@ -9,6 +9,7 @@ import { EmptyState } from "@/components/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { SelectField } from "@/components/ui/select-field";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   useAccessRoles,
@@ -325,24 +326,19 @@ function MemberDetail({
             No more roles to assign. Create one above.
           </p>
         ) : (
-          <select
-            value=""
+          <SelectField
+            className="w-64"
             disabled={setMembers.isPending}
-            onChange={(e) => {
-              const g = available.find((x) => x.id === e.target.value);
-              if (g) addRole(g);
+            onValueChange={(value) => {
+              const group = available.find((item) => item.id === value);
+              if (group) addRole(group);
             }}
-            className="h-9 w-64 rounded-md border bg-transparent px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <option value="" disabled>
-              Assign role…
-            </option>
-            {available.map((g) => (
-              <option key={g.id} value={g.id}>
-                {g.name}
-              </option>
-            ))}
-          </select>
+            options={[
+              { value: "", label: "Assign role…", disabled: true },
+              ...available.map((group) => ({ value: group.id, label: group.name })),
+            ]}
+            value=""
+          />
         )}
       </div>
     </div>

@@ -72,9 +72,9 @@ export function KvBrowser({
   const base = `/secrets/${mount}`;
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full min-w-0 flex-col">
       {/* breadcrumbs */}
-      <div className="flex items-center gap-1 border-b px-4 py-3 text-sm">
+      <div className="flex flex-wrap items-center gap-1 border-b px-4 py-3 text-sm">
         <KeyRound className="mr-1 size-4 text-muted-foreground" />
         <Link href={base} className="font-medium hover:underline">
           {mount}
@@ -97,9 +97,9 @@ export function KvBrowser({
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1">
+      <div className="flex min-h-0 flex-1 flex-col md:flex-row">
         {/* key list */}
-        <div className="w-72 shrink-0 overflow-auto border-r">
+        <div className="max-h-64 w-full shrink-0 overflow-auto border-b md:max-h-none md:w-72 md:border-b-0 md:border-r">
           {list.isLoading ? (
             <p className="p-4 text-sm text-muted-foreground">Loading…</p>
           ) : list.isError ? (

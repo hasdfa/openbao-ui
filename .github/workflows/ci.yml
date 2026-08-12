@@ -5,14 +5,20 @@ on:
   push:
     branches: [main]
 
+permissions: {}
+
 jobs:
   build:
     name: Lint & build
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 22
           cache: pnpm
@@ -22,14 +28,19 @@ jobs:
       - run: pnpm build
         env:
           NEXT_TELEMETRY_DISABLED: "1"
+          NEXT_PUBLIC_BUILD_REVISION: ${{ github.sha }}
 
   e2e:
     name: E2E (Playwright vs real OpenBao)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 22
           cache: pnpm
@@ -39,6 +50,7 @@ jobs:
         run: pnpm build
         env:
           NEXT_TELEMETRY_DISABLED: "1"
+          NEXT_PUBLIC_BUILD_REVISION: ${{ github.sha }}
 
       # Assemble the standalone output + run it (with OpenBao) as the single
       # runtime image — same artifact behavior as the shipped image, but built
@@ -51,10 +63,12 @@ jobs:
           cp -r public ci-ctx/app/public
           cp docker/entrypoint.sh docker/openbao.hcl ci-ctx/
           docker build -f docker/Dockerfile.runtime \
-            --build-arg OPENBAO_VERSION="$(tr -d '[:space:]' < .openbao-version)" \
+            --build-arg OPENBAO_IMAGE="$(tr -d '[:space:]' < .openbao-image)" \
             -t openbao-ui:ci ci-ctx
-          docker run -d --name openbao-ui --init -p 3000:3000 \
-            -e BAO_DEV=1 -e BAO_DEV_ROOT_TOKEN_ID=root openbao-ui:ci
+          docker run -d --name openbao-ui --init -p 127.0.0.1:3000:3000 \
+            -e NODE_ENV=development -e BAO_DEV=1 -e BAO_DEV_ROOT_TOKEN_ID=root \
+            -e BAO_LOGIN_RATE_LIMIT=100 \
+            openbao-ui:ci
           ok=""
           for i in $(seq 1 60); do
             if [ "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/ui2/login)" = "200" ]; then
@@ -78,7 +92,7 @@ jobs:
 
       - name: Upload test artifacts on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: playwright-results
           path: test-results/

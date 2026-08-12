@@ -5,7 +5,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
 
 import { Logo } from "@/components/logo";
-import { SealGate } from "@/components/seal-gate";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -17,6 +16,13 @@ import {
 import { Disclosure } from "@/components/ui/disclosure";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectItem,
+  SelectPopup,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { API_BASE } from "@/lib/base-path";
 
 const LOGIN_ENDPOINT = `${API_BASE}/auth/login`;
@@ -45,11 +51,9 @@ type UiConfig = {
 
 export default function LoginPage() {
   return (
-    <SealGate>
-      <Suspense fallback={null}>
-        <LoginForm />
-      </Suspense>
-    </SealGate>
+    <Suspense fallback={null}>
+      <LoginForm />
+    </Suspense>
   );
 }
 
@@ -60,9 +64,9 @@ async function startOidc(mount: string): Promise<{ authUrl?: string; error?: str
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ mount: mount || undefined }),
     });
-    const data = await res.json();
-    if (!res.ok) return { error: data.error ?? "OIDC start failed" };
-    return { authUrl: data.authUrl };
+    const result = await res.json() as { ok: boolean; data?: { authUrl?: string }; error?: { message?: string } };
+    if (!result.ok) return { error: result.error?.message ?? "OIDC start failed" };
+    return { authUrl: result.data?.authUrl };
   } catch {
     return { error: "Network error — is OpenBao reachable?" };
   }
@@ -108,8 +112,10 @@ function LoginForm() {
       })
       .catch(() => {});
     fetch(`${API_BASE}/ui-config`)
-      .then((r) => (r.ok ? r.json() : { config: {} }))
-      .then((d) => setCfg(d.config ?? {}))
+      .then((response) => response.json())
+      .then((result: { ok?: boolean; data?: { config?: UiConfig } }) =>
+        setCfg(result.ok ? result.data?.config ?? {} : {}),
+      )
       .catch(() => {});
   }, []);
 
@@ -151,9 +157,10 @@ function LoginForm() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ mount: f.mount || undefined, role: f.role || undefined }),
         });
-        const data = await res.json();
-        if (!res.ok) return setError(data.error ?? "OIDC start failed");
-        window.location.href = data.authUrl;
+        const result = await res.json() as { ok: boolean; data?: { authUrl?: string }; error?: { message?: string } };
+        if (!result.ok) return setError(result.error?.message ?? "OIDC start failed");
+        if (!result.data?.authUrl) return setError("OIDC start returned no authorization URL.");
+        window.location.href = result.data.authUrl;
         return;
       }
 
@@ -171,9 +178,9 @@ function LoginForm() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        setError(data.error ?? "Login failed");
+      const result = await res.json() as { ok: boolean; error?: { message?: string } };
+      if (!result.ok) {
+        setError(result.error?.message ?? "Login failed");
         return;
       }
       router.push("/");
@@ -194,21 +201,25 @@ function LoginForm() {
     <form onSubmit={submit} className="flex flex-col gap-4">
       <div className="flex flex-col gap-2">
         <Label htmlFor="method">Method</Label>
-        <select
-          id="method"
+        <Select
+          items={METHODS}
           value={method}
-          onChange={(e) => {
-            setMethod(e.target.value);
+          onValueChange={(value) => {
+            setMethod(value ?? "token");
             setError(null);
           }}
-          className="h-9 rounded-md border bg-transparent px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          {METHODS.map((m) => (
-            <option key={m.value} value={m.value}>
-              {m.label}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger id="method">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectPopup>
+            {METHODS.map((m) => (
+              <SelectItem key={m.value} value={m.value}>
+                {m.label}
+              </SelectItem>
+            ))}
+          </SelectPopup>
+        </Select>
       </div>
 
       {method === "token" ? (

@@ -1,34 +1,39 @@
-import { NextResponse } from "next/server";
-
 import { openbao, OpenBaoRequestError } from "@/lib/openbao";
+import {
+  asJsonResponse,
+  Dependency,
+  serviceUnavailable,
+  success,
+  unauthorized,
+} from "@/lib/http/response";
 import { clearToken, getToken } from "@/lib/session";
 
 /**
- * GET /ui2/api/auth/session — returns info about the current token, or 401 if
- * there is no valid session. Clears the cookie if the token is no longer valid.
+ * GET /ui2/api/auth/session — returns information about the current token.
+ * An invalid token is removed from the local session; unavailable OpenBao is a
+ * dependency failure rather than an authentication failure.
  */
 export async function GET() {
   const token = await getToken();
   if (!token) {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    return asJsonResponse(unauthorized());
   }
 
   try {
     const lookup = await openbao.lookupSelf(token);
-    return NextResponse.json({
-      displayName: lookup.data.display_name,
-      policies: lookup.data.policies,
-      ttl: lookup.data.ttl,
-      renewable: lookup.data.renewable,
-    });
-  } catch (err) {
-    if (err instanceof OpenBaoRequestError && err.status === 403) {
-      await clearToken();
-      return NextResponse.json({ error: "Session expired" }, { status: 401 });
-    }
-    return NextResponse.json(
-      { error: "Could not reach OpenBao" },
-      { status: 502 },
+    return asJsonResponse(
+      success({
+        displayName: lookup.data.display_name,
+        policies: lookup.data.policies,
+        ttl: lookup.data.ttl,
+        renewable: lookup.data.renewable,
+      }),
     );
+  } catch (error) {
+    if (error instanceof OpenBaoRequestError && error.status === 403) {
+      await clearToken();
+      return asJsonResponse(unauthorized());
+    }
+    return asJsonResponse(serviceUnavailable(Dependency.OpenBao));
   }
 }

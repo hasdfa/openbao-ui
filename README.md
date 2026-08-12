@@ -31,11 +31,11 @@ the same image, reachable only on loopback:
 ```
                  ┌───────────────────────── single Docker image ─────────────────────────┐
    browser  ───► │  Next.js (:3000)                                                         │
-                 │   ├── /ui2/*      → React pages (coss ui — this app)                      │
-                 │   ├── /ui2/api/*  → BFF route handlers (auth, session)                    │
-                 │   ├── /ui/*       → rewrite/proxy ─────────►  OpenBao stock UI            │
-                 │   └── /v1/*       → rewrite/proxy ─────────►  OpenBao (127.0.0.1:8200)    │
-                 └──────────────────────────────────────────────────────────────────────────┘
+                 │   ├── /ui2/*      → React pages (coss ui — this app)                    │
+                 │   └── /ui2/api/*  → authenticated, bounded BFF route handlers          │
+                 │                              │                                          │
+                 │                              └──► OpenBao (127.0.0.1:8200)             │
+                 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
 - **`/ui2/*`** — this application's pages (served under `basePath: /ui2`). The
@@ -43,13 +43,13 @@ the same image, reachable only on loopback:
 - **`/ui2/api/*`** — custom API routes. Login validates credentials against
   OpenBao server-side and stores the token in an **httpOnly cookie** — it never
   reaches client JS.
-- **`/ui/*`** — OpenBao's own **stock UI**, proxied through untouched so both
-  UIs coexist (`ui = true` in `docker/openbao.hcl`; auto-on in dev mode). A
-  **Classic UI** link in the sidebar points here.
-- **`/v1/*`** — transparently proxied to the embedded OpenBao
-  (`next.config.ts` → `rewrites()`).
+- The OpenBao stock UI (`/ui/*`) and raw OpenBao API (`/v1/*`) are deliberately
+  **not** reverse-proxied. This keeps uninitialized-server bootstrap APIs off the
+  public web surface.
 
-Only port **3000** is exposed; OpenBao stays internal.
+Only port **3000** is exposed; OpenBao stays internal. See
+[`docs/deployment-security.md`](docs/deployment-security.md) for operator
+bootstrap and reverse-proxy requirements.
 
 ## Local development
 
@@ -66,14 +66,16 @@ pnpm install
 pnpm dev                                        # http://localhost:3000
 ```
 
-Open <http://localhost:3000> → you'll be redirected to `/ui2/login`. Sign in with
-the **Token** method using `root`. The Overview page shows live seal status, your
-token's policies, and the enabled secret engines; **Secrets** lets you browse KV
-engines, create/edit secrets, view version history, and roll back — all fetched
-through the proxy, proving the frontend ↔ backend wiring end to end.
+For local development, open <http://localhost:3000> and sign in with the
+**Token** method using the development-only token you supplied. The Overview
+page shows live seal status, token policies, and enabled secret engines;
+**Secrets** lets you browse KV engines, create/edit secrets, view version
+history, and roll back — all fetched through the proxy, proving the frontend ↔
+backend wiring end to end.
 
-Config via env (see `.env.example`): `OPENBAO_ADDR`, `BAO_COOKIE_NAME`, and the
-optional `OPENBAO_UI_PUBLIC_URL` ([behind a reverse proxy](#behind-a-reverse-proxy)).
+Config via env (see `.env.example`): `OPENBAO_ADDR`, `BAO_COOKIE_NAME`, and
+**required in production** `OPENBAO_UI_PUBLIC_URL` (the canonical public HTTPS
+origin used for OIDC redirects and CSRF validation).
 
 ### Architecture detail: client data flow
 
@@ -85,20 +87,18 @@ JS while the UI still gets live, cacheable reads/writes.
 ## Single image (UI + OpenBao)
 
 ```bash
-docker build -t openbao-ui .
-docker run --rm -p 3000:3000 -e BAO_DEV=1 -e BAO_DEV_ROOT_TOKEN_ID=root openbao-ui
-# or:
+# Development only: explicit opt-in, loopback-bound, unsealed in-memory OpenBao.
+BAO_DEV_ROOT_TOKEN_ID=choose-a-local-dev-token \
+  docker compose -f docker-compose.dev.yml up --build
+
+# Production-safe default: set OPENBAO_UI_PUBLIC_URL in .env, then initialize
+# and unseal the persistent instance locally before exposing it through TLS ingress.
 docker compose up --build
 ```
 
-Then visit <http://localhost:3000> and log in with token `root`.
-
-- **Dev mode** (`BAO_DEV=1`, default): in-memory, auto-unsealed, fixed root
-  token — great for trying it out, **not** for production.
-- **Non-dev** (`BAO_DEV=0`): boots from `docker/openbao.hcl` (file storage). The
-  instance starts **sealed/uninitialized** — the UI detects this at `/ui2/login`
-  and walks you through the built-in **initialize → save keys → unseal** flow.
-  Mount a volume at `/bao/file` to persist storage.
+For development, visit <http://localhost:3000> and sign in with the
+**Token** method using the development-only token you supplied. Do not expose
+development mode publicly.
 
 ### Behind a reverse proxy
 
@@ -126,21 +126,19 @@ with the redirect URI registered in your Google/OIDC provider. Only the origin
 The published image embeds a specific OpenBao version and is **tagged to match
 it**, so picking a tag picks the OpenBao inside:
 
-| Our image (`ghcr.io/hasdfa/openbao-ui`) | Embedded OpenBao |
+| Our image (`ghcr.io/krolbot/openbao-ui`) | Embedded OpenBao |
 | --- | --- |
-| `:2.5.5`, `:2.5`, `:2` | `quay.io/openbao/openbao:2.5.5` |
+| `:2.6.1`, `:2.6`, `:2` | `quay.io/openbao/openbao:2.6.1` |
 | `:latest` | newest released OpenBao |
 | `:sha-<commit>` | immutable, per-commit |
 
-- The version is pinned in **`.openbao-version`** (single source of truth). CI,
-  the published image, and local `docker build` all read it, so the OpenBao
-  binary inside always matches the tag. Override per build with
-  `--build-arg OPENBAO_VERSION=<x.y.z>`.
-- **Auto-release:** `.github/workflows/sync-openbao.yml` runs weekly — when
-  OpenBao cuts a new release it publishes a matching `openbao-ui:<version>`
-  image and opens a PR bumping the pin. So **every new OpenBao release gets a
-  matching UI image automatically.** `publish.yml` also ships on every push to
-  `main` (re-publishing `:latest` + the current version tags).
+- **`.openbao-version`** records the intended OpenBao release. **`.openbao-image`**
+  is the build source of truth and pins the matching upstream image by immutable
+  digest. CI and local Docker builds consume the pinned image reference; do not
+  replace it with a mutable tag.
+- **Auto-release:** `.github/workflows/sync-openbao.yml` discovers a new OpenBao
+  release, resolves its immutable image digest, and opens a PR that updates both
+  pins. `publish.yml` publishes on every push to `main`.
 
 ## coss ui
 

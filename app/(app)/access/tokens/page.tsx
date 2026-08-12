@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogHeader } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SelectField } from "@/components/ui/select-field";
 import { BaoError } from "@/lib/bao-client";
 import {
   TokenInfo,
@@ -214,19 +215,15 @@ function CreateTokenDialog({ onClose }: { onClose: () => void }) {
             </div>
             <div className="flex flex-1 flex-col gap-2">
               <Label htmlFor="t-role">Role (optional)</Label>
-              <select
+              <SelectField
                 id="t-role"
+                onValueChange={setRole}
+                options={[
+                  { value: "", label: "— none —" },
+                  ...(roles.data ?? []).map((item) => ({ value: item, label: item })),
+                ]}
                 value={role}
-                onChange={(e) => setRole(e.target.value)}
-                className="h-9 rounded-md border bg-transparent px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <option value="">— none —</option>
-                {(roles.data ?? []).map((r) => (
-                  <option key={r} value={r}>
-                    {r}
-                  </option>
-                ))}
-              </select>
+              />
             </div>
           </div>
           <div className="flex gap-6 text-sm">

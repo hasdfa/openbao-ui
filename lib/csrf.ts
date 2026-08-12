@@ -1,3 +1,5 @@
+import { configuredOrigin } from "@/lib/request-origin";
+
 // Defense-in-depth CSRF protection for state-changing BFF requests.
 //
 // The session token lives in a SameSite=lax httpOnly cookie, which already
@@ -12,7 +14,10 @@ export function isCrossSiteRequest(req: Request): boolean {
   const origin = req.headers.get("origin");
   if (origin) {
     try {
-      return new URL(origin).host !== req.headers.get("host");
+      // Compare complete origins (scheme + host + port). Comparing only Host
+      // would allow an HTTP origin on the same host through this fallback.
+      const expectedOrigin = configuredOrigin() ?? new URL(req.url).origin;
+      return new URL(origin).origin !== expectedOrigin;
     } catch {
       return true;
     }

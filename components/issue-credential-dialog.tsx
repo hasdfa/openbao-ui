@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle2, KeyRound, ShieldAlert } from "lucide-react";
+import { KeyRound, ShieldAlert } from "lucide-react";
 import * as React from "react";
 
 import { CopyButton } from "@/components/copy-button";
@@ -20,7 +20,6 @@ import {
   type IssuedCred,
 } from "@/lib/app-credentials";
 import { resolveEnvs, type EnvSelector } from "@/lib/access-roles";
-import { buildSnippets } from "@/lib/guides";
 
 const LEVELS: AccessLevel[] = ["viewer", "editor"];
 

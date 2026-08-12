@@ -1,63 +1,98 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 
+import { isAccessRole } from "@/lib/access-role-schema";
 import { isCrossSiteRequest } from "@/lib/csrf";
 import { getConfig, setConfig } from "@/lib/db";
-import { getToken } from "@/lib/session";
-import { isOperator } from "@/lib/ui-admin";
+import {
+  asJsonResponse,
+  Dependency,
+  forbidden,
+  invalidRequest,
+  payloadTooLarge,
+  serviceUnavailable,
+  success,
+} from "@/lib/http/response";
+import {
+  authorizeMetadataOperator,
+  authorizeMetadataRequest,
+} from "@/lib/metadata-session";
+import { parseJsonBody, RequestBodyError } from "@/lib/request-body";
 
 /**
  * Definitions of scoped access roles (shareable env groups + app-specific
- * groups), per namespace. These are the structured intent ({ env selector, app,
- * level }); materializing one into an OpenBao policy + identity group happens
- * client-side. Stored so they're editable and re-syncable.
- *   GET /ui2/api/access-roles  — authenticated
- *   PUT /ui2/api/access-roles  — operator only (namespace from header)
+ * groups), per namespace. These are structured intent; materializing policies
+ * and identity groups happens through the OpenBao client.
  */
 export const dynamic = "force-dynamic";
 
-const key = (ns: string) => `access-roles::${ns}`;
+const key = (namespace: string) => `access-roles::${namespace}`;
+const MaxAccessRolesBodyBytes = 64 * 1024;
+
+type AccessRolesPayload = { roles?: unknown[] };
+
+function requestBodyFailure(error: unknown) {
+  if (error instanceof RequestBodyError && error.status === 413) {
+    return payloadTooLarge("The access-role request body is too large.");
+  }
+  return invalidRequest("The request body must be valid JSON.");
+}
 
 export async function GET(req: NextRequest) {
-  const token = await getToken();
-  if (!token) {
-    return NextResponse.json({ errors: ["not authenticated"] }, { status: 401 });
+  const authorization = await authorizeMetadataRequest(req.headers);
+  if (authorization.response) return authorization.response;
+  const operatorRejection = await authorizeMetadataOperator(
+    authorization.session,
+  );
+  if (operatorRejection) return operatorRejection;
+
+  try {
+    const roles =
+      getConfig<unknown[]>(key(authorization.session.namespace)) ?? [];
+    return asJsonResponse(success({ roles }));
+  } catch {
+    return asJsonResponse(serviceUnavailable(Dependency.Storage));
   }
-  const ns = req.headers.get("x-vault-namespace") ?? "";
-  return NextResponse.json({ roles: getConfig<unknown[]>(key(ns)) ?? [] });
 }
 
 export async function PUT(req: NextRequest) {
-  const token = await getToken();
-  if (!token) {
-    return NextResponse.json({ errors: ["not authenticated"] }, { status: 401 });
-  }
+  const authorization = await authorizeMetadataRequest(req.headers);
+  if (authorization.response) return authorization.response;
+  const { session } = authorization;
+
   if (isCrossSiteRequest(req)) {
-    return NextResponse.json(
-      { errors: ["cross-site request blocked"] },
-      { status: 403 },
+    return asJsonResponse(forbidden("Cross-site requests are not allowed."));
+  }
+
+  const operatorRejection = await authorizeMetadataOperator(session);
+  if (operatorRejection) return operatorRejection;
+
+  let parsed: unknown;
+  try {
+    parsed = await parseJsonBody<unknown>(req, MaxAccessRolesBodyBytes);
+  } catch (error) {
+    return asJsonResponse(requestBodyFailure(error));
+  }
+
+  if (
+    typeof parsed !== "object" ||
+    parsed === null ||
+    !Array.isArray((parsed as AccessRolesPayload).roles) ||
+    !(parsed as AccessRolesPayload).roles?.every(isAccessRole)
+  ) {
+    return asJsonResponse(
+      invalidRequest("roles must be an array of valid access roles."),
     );
   }
-  // Namespace from the caller's header gates the operator check and the key.
-  const ns = req.headers.get("x-vault-namespace") ?? "";
-  if (!(await isOperator(token, ns))) {
-    return NextResponse.json(
-      { errors: ["forbidden: requires mount-management capability"] },
-      { status: 403 },
-    );
+  const payload = parsed as AccessRolesPayload;
+
+  if (!Array.isArray(payload.roles)) {
+    return asJsonResponse(invalidRequest("roles must be an array."));
   }
-  let body: { roles?: unknown[] };
+
   try {
-    body = (await req.json()) as typeof body;
+    setConfig(key(session.namespace), payload.roles);
+    return asJsonResponse(success({ roles: payload.roles }));
   } catch {
-    return NextResponse.json({ errors: ["invalid JSON"] }, { status: 400 });
-  }
-  if (!Array.isArray(body.roles)) {
-    return NextResponse.json({ errors: ["roles must be an array"] }, { status: 400 });
-  }
-  try {
-    setConfig(key(ns), body.roles);
-    return NextResponse.json({ roles: body.roles });
-  } catch {
-    return NextResponse.json({ errors: ["could not save roles"] }, { status: 500 });
+    return asJsonResponse(serviceUnavailable(Dependency.Storage));
   }
 }

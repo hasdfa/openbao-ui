@@ -1,7 +1,10 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+
 import { API_BASE } from "@/lib/base-path";
+import { HttpClientError, readHttpEnvelope } from "@/lib/http/client";
+import { HttpErrorCode } from "@/lib/http/response";
 
 export type Session = {
   displayName: string;
@@ -10,31 +13,38 @@ export type Session = {
   renewable: boolean;
 };
 
+const SessionQueryKey = ["session"] as const;
+
+async function fetchSession(): Promise<Session | null> {
+  const response = await fetch(`${API_BASE}/auth/session`);
+  try {
+    return await readHttpEnvelope<Session>(response);
+  } catch (error) {
+    if (error instanceof HttpClientError && error.code === HttpErrorCode.Unauthenticated) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+async function renewSession(): Promise<{ ttl: number }> {
+  const response = await fetch(`${API_BASE}/auth/renew`, { method: "POST" });
+  return readHttpEnvelope<{ ttl: number }>(response);
+}
+
 export function useSession() {
   return useQuery({
-    queryKey: ["session"],
-    queryFn: async (): Promise<Session | null> => {
-      const res = await fetch(`${API_BASE}/auth/session`);
-      if (!res.ok) return null;
-      return res.json();
-    },
-    // keep ttl reasonably fresh
+    queryKey: SessionQueryKey,
+    queryFn: fetchSession,
     refetchInterval: 60_000,
   });
 }
 
 export function useRenew() {
-  const qc = useQueryClient();
+  const queryClient = useQueryClient();
   return useMutation({
     meta: { success: "Token renewed" },
-    mutationFn: async () => {
-      const res = await fetch(`${API_BASE}/auth/renew`, { method: "POST" });
-      if (!res.ok) {
-        const data = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(data.error ?? `Renew failed (${res.status})`);
-      }
-      return res.json() as Promise<{ ttl: number }>;
-    },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["session"] }),
+    mutationFn: renewSession,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: SessionQueryKey }),
   });
 }

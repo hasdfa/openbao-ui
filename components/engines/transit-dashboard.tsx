@@ -9,6 +9,7 @@ import { Dialog, DialogHeader } from "@/components/ui/dialog";
 import { Disclosure } from "@/components/ui/disclosure";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SelectField } from "@/components/ui/select-field";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BaoError } from "@/lib/bao-client";
 import { fromBase64, toBase64 } from "@/lib/encoding";
@@ -272,15 +273,11 @@ function CreateKeyDialog({
         </div>
         <div className="flex flex-col gap-2">
           <Label>Type</Label>
-          <select
+          <SelectField
+            onValueChange={setType}
+            options={KEY_TYPES.map((keyType) => ({ value: keyType, label: keyType }))}
             value={type}
-            onChange={(e) => setType(e.target.value)}
-            className="h-9 rounded-md border bg-transparent px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            {KEY_TYPES.map((t) => (
-              <option key={t} value={t}>{t}</option>
-            ))}
-          </select>
+          />
         </div>
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
         <div className="flex justify-end gap-2">

@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { API_BASE } from "@/lib/base-path";
+import { readHttpEnvelope } from "@/lib/http/client";
 
 import { useNamespace } from "@/lib/namespace";
 
@@ -13,13 +14,11 @@ export function useOnboarding() {
   return useQuery({
     queryKey: ["onboarding", namespace],
     queryFn: async (): Promise<Onboarding> => {
-      const res = await fetch(
-        `${API_BASE}/onboarding?namespace=${encodeURIComponent(namespace)}`,
-        { headers: { "x-vault-namespace": namespace } },
-      );
-      if (!res.ok) return {};
-      const data = (await res.json()) as { onboarding?: Onboarding };
-      return data.onboarding ?? {};
+      const response = await fetch(`${API_BASE}/onboarding`, {
+        headers: { "x-vault-namespace": namespace },
+      });
+      const data = await readHttpEnvelope<{ onboarding: Onboarding }>(response);
+      return data.onboarding;
     },
     staleTime: 30_000,
   });
@@ -30,19 +29,15 @@ export function useSetOnboarding() {
   const { namespace } = useNamespace();
   return useMutation({
     mutationFn: async (patch: Onboarding) => {
-      const res = await fetch(`${API_BASE}/onboarding`, {
+      const response = await fetch(`${API_BASE}/onboarding`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
           "x-vault-namespace": namespace,
         },
-        body: JSON.stringify({ namespace, ...patch }),
+        body: JSON.stringify(patch),
       });
-      if (!res.ok) {
-        const data = (await res.json().catch(() => ({}))) as { errors?: string[] };
-        throw new Error(data.errors?.[0] ?? `Request failed (${res.status})`);
-      }
-      return res.json();
+      return readHttpEnvelope<{ onboarding: Onboarding }>(response);
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["onboarding", namespace] }),
   });

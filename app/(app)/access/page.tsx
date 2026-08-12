@@ -73,9 +73,8 @@ export default function PoliciesPage() {
   }
 
   return (
-    <div className="flex h-full">
-      {/* list */}
-      <div className="w-64 shrink-0 overflow-auto border-r p-3">
+    <div className="flex min-h-full flex-col md:h-full md:flex-row">
+      <aside className="w-full shrink-0 border-b p-3 md:w-64 md:overflow-auto md:border-b-0 md:border-r md:pl-6" aria-label="Policies">
         <Button size="sm" className="mb-2 w-full" onClick={openNew}>
           <Plus /> New policy
         </Button>
@@ -100,17 +99,16 @@ export default function PoliciesPage() {
             ))}
           </ul>
         )}
-      </div>
+      </aside>
 
-      {/* editor */}
-      <div className="min-w-0 flex-1 p-6">
+      <section className="min-w-0 flex-1 p-4 md:min-h-0 md:p-6" aria-label="Policy editor">
         {!creating && !selected ? (
-          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+          <div className="flex min-h-32 items-center justify-center text-center text-sm text-muted-foreground md:h-full">
             Select a policy, or create a new one.
           </div>
         ) : (
-          <div className="flex h-full flex-col gap-4">
-            <div className="flex items-end gap-3">
+          <div className="flex min-h-[28rem] flex-col gap-4 md:h-full md:min-h-0">
+            <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-end">
               <div className="flex flex-1 flex-col gap-2">
                 <Label htmlFor="pol-name">Policy name</Label>
                 <Input
@@ -156,7 +154,7 @@ export default function PoliciesPage() {
             ) : null}
           </div>
         )}
-      </div>
+      </section>
 
       <ConfirmDialog
         open={confirmDelete}

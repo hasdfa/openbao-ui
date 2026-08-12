@@ -4,23 +4,17 @@
 # Single image that runs BOTH the OpenBao server and our Next.js BFF/UI.
 #   - OpenBao listens internally on 127.0.0.1:8200
 #   - Next.js (standalone) listens on 0.0.0.0:3000 and is the only exposed port
-#   - Next proxies /v1/* to OpenBao (see next.config.ts rewrites)
+#   - OpenBao remains reachable only through bounded authenticated BFF routes
 ###############################################################################
 
-# OpenBao binary source. The image is tagged to match this exact OpenBao
-# version (tag parity) and the `bao` binary copied below comes from it. Keep
-# OPENBAO_VERSION in sync with the repo's `.openbao-version` pin — CI passes it
-# explicitly (`--build-arg OPENBAO_VERSION=$(cat .openbao-version)`); this
-# default is just the fallback for ad-hoc local builds.
-#   docker build --build-arg OPENBAO_VERSION=2.5.5 .
-# Or override the whole ref to pin a digest:
-#   docker build --build-arg OPENBAO_IMAGE=quay.io/openbao/openbao@sha256:… .
-ARG OPENBAO_VERSION=2.5.5
-ARG OPENBAO_IMAGE=quay.io/openbao/openbao:${OPENBAO_VERSION}
+# The image is pinned by immutable digest. Keep this fallback in sync with
+# `.openbao-image`; CI passes that committed ref explicitly.
+#   docker build --build-arg OPENBAO_IMAGE="$(cat .openbao-image)" .
+ARG OPENBAO_IMAGE=quay.io/openbao/openbao@sha256:5b2486ab0fb90bbc788cc345b0a08616dfb375873ee8be5df3a2fd4d378a67e0
 FROM ${OPENBAO_IMAGE} AS openbao
 
 # --- Stage 1: install dependencies ------------------------------------------
-FROM node:22-alpine AS deps
+FROM node:22-alpine@sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2 AS deps
 RUN corepack enable
 WORKDIR /app
 COPY package.json pnpm-lock.yaml* ./
@@ -30,16 +24,18 @@ COPY package.json pnpm-lock.yaml* ./
 RUN if [ -f pnpm-lock.yaml ]; then pnpm install --frozen-lockfile; else pnpm install; fi
 
 # --- Stage 2: build the Next.js standalone output ---------------------------
-FROM node:22-alpine AS builder
+FROM node:22-alpine@sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2 AS builder
 RUN corepack enable
 WORKDIR /app
+ARG BUILD_REVISION=development
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV NEXT_PUBLIC_BUILD_REVISION=${BUILD_REVISION}
 RUN pnpm build
 
 # --- Stage 3: runtime (Node + the OpenBao binary) ---------------------------
-FROM node:22-alpine AS runner
+FROM node:22-alpine@sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2 AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
@@ -51,8 +47,8 @@ ENV HOSTNAME=0.0.0.0
 # signal handling is delegated to Docker's init (run with `--init` / compose
 # `init: true`). Keeps the image lean and free of build-time network deps.
 
-# Pull the `bao` binary from the OpenBao image stage (see OPENBAO_IMAGE above).
-COPY --from=openbao /bin/bao /usr/local/bin/bao
+# OpenBao 2.6+ installs `bao` at /usr/bin/bao.
+COPY --from=openbao /usr/bin/bao /usr/local/bin/bao
 
 # Next.js standalone server + static assets.
 COPY --from=builder /app/.next/standalone ./
@@ -66,10 +62,6 @@ RUN chmod +x /usr/local/bin/entrypoint.sh \
   && mkdir -p /bao/file \
   && addgroup -S bao && adduser -S bao -G bao \
   && chown -R bao:bao /bao /app
-
-# Dev mode is the default so login works out of the box; disable for production.
-ENV BAO_DEV=1
-ENV BAO_DEV_ROOT_TOKEN_ID=root
 
 EXPOSE 3000
 USER bao

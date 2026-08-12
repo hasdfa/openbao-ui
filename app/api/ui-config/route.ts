@@ -1,97 +1,96 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 
 import { isCrossSiteRequest } from "@/lib/csrf";
 import { getConfig, setConfig } from "@/lib/db";
+import {
+  asJsonResponse,
+  Dependency,
+  forbidden,
+  invalidRequest,
+  payloadTooLarge,
+  serviceUnavailable,
+  success,
+  unauthorized,
+} from "@/lib/http/response";
+import { OpenBaoRequestError } from "@/lib/openbao";
 import { configuredOrigin } from "@/lib/request-origin";
-import { getToken } from "@/lib/session";
+import { parseJsonBody, RequestBodyError } from "@/lib/request-body";
+import { getValidatedToken } from "@/lib/session";
 import { isOperator } from "@/lib/ui-admin";
 
-/**
- * UI configuration (branding + login customization).
- *   GET  /ui2/api/ui-config  — PUBLIC, returns only whitelisted presentation
- *                             fields so the unauthenticated login page can brand
- *                             itself. Never returns secrets.
- *   PUT  /ui2/api/ui-config  — root-namespace operator only. This is a single
- *                             server-global blob (one CONFIG_KEY, not
- *                             per-namespace), so authorization is checked in the
- *                             root namespace regardless of the caller's current
- *                             namespace — a child-namespace operator must not be
- *                             able to change server-wide login branding.
- *
- * Phase 1 establishes the route + store; Phase 2 (login customization) fills in
- * branding/default-method/ordering on top of it.
- */
+/** Public login branding and root-operator managed server-global configuration. */
 export const dynamic = "force-dynamic";
 
-const CONFIG_KEY = "ui";
-
-// Fields safe to expose without authentication (login page branding).
-const PUBLIC_KEYS = [
-  "branding",
-  "defaultLoginMethod",
-  "hideTokenLogin",
-  "loginMethodOrder",
-] as const;
-
+const ConfigKey = "ui";
+const MaxUiConfigBodyBytes = 16 * 1024;
+const PublicUiConfigKey = {
+  Branding: "branding",
+  DefaultLoginMethod: "defaultLoginMethod",
+  HideTokenLogin: "hideTokenLogin",
+  LoginMethodOrder: "loginMethodOrder",
+} as const;
+const PublicUiConfigKeys = Object.values(PublicUiConfigKey);
 type UiConfig = Record<string, unknown>;
 
-export async function GET() {
-  const cfg = (getConfig<UiConfig>(CONFIG_KEY) ?? {}) as UiConfig;
-  const pub: UiConfig = {};
-  for (const k of PUBLIC_KEYS) {
-    if (k in cfg) pub[k] = cfg[k];
+function publicConfig(config: UiConfig): UiConfig {
+  const result: UiConfig = {};
+  for (const key of PublicUiConfigKeys) {
+    if (key in config) result[key] = config[key];
   }
-  // Surface the OPENBAO_UI_PUBLIC_URL override (if set) so client-side setup —
-  // e.g. the Google wizard registering allowed_redirect_uris — derives the same
-  // redirect URI the server's login route will send, instead of the browser's
-  // origin. Env-derived and read-only; not persisted via PUT.
   const publicUrl = configuredOrigin();
-  if (publicUrl) pub.publicUrl = publicUrl;
-  return NextResponse.json({ config: pub });
+  return publicUrl ? { ...result, publicUrl } : result;
+}
+
+function requestBodyFailure(error: unknown) {
+  if (error instanceof RequestBodyError && error.status === 413) {
+    return payloadTooLarge("The UI configuration request body is too large.");
+  }
+  return invalidRequest("The request body must be valid JSON.");
+}
+
+export async function GET() {
+  try {
+    return asJsonResponse(success({ config: publicConfig(getConfig<UiConfig>(ConfigKey) ?? {}) }));
+  } catch {
+    return asJsonResponse(serviceUnavailable(Dependency.Storage));
+  }
 }
 
 export async function PUT(req: NextRequest) {
-  const token = await getToken();
-  if (!token) {
-    return NextResponse.json({ errors: ["not authenticated"] }, { status: 401 });
+  let token: string | undefined;
+  try {
+    token = await getValidatedToken("");
+  } catch (error) {
+    if (error instanceof OpenBaoRequestError) {
+      return asJsonResponse(serviceUnavailable(Dependency.OpenBao));
+    }
+    throw error;
   }
-  if (isCrossSiteRequest(req)) {
-    return NextResponse.json(
-      { errors: ["cross-site request blocked"] },
-      { status: 403 },
-    );
-  }
-  // Global setting → require mount-management capability in the ROOT namespace,
-  // not whatever namespace the caller is currently browsing.
-  if (!(await isOperator(token, ""))) {
-    return NextResponse.json(
-      { errors: ["forbidden: requires mount-management capability"] },
-      { status: 403 },
-    );
+  if (!token) return asJsonResponse(unauthorized());
+  if (isCrossSiteRequest(req)) return asJsonResponse(forbidden("Cross-site requests are not allowed."));
+
+  try {
+    if (!(await isOperator(token, ""))) return asJsonResponse(forbidden("Root operator permission is required."));
+  } catch (error) {
+    if (error instanceof OpenBaoRequestError) return asJsonResponse(serviceUnavailable(Dependency.OpenBao));
+    throw error;
   }
 
-  let body: UiConfig;
+  let body: unknown;
   try {
-    body = (await req.json()) as UiConfig;
-  } catch {
-    return NextResponse.json({ errors: ["invalid JSON"] }, { status: 400 });
+    body = await parseJsonBody<unknown>(req, MaxUiConfigBodyBytes);
+  } catch (error) {
+    return asJsonResponse(requestBodyFailure(error));
   }
-  if (!body || typeof body !== "object" || Array.isArray(body)) {
-    return NextResponse.json(
-      { errors: ["body must be a JSON object"] },
-      { status: 400 },
-    );
+  if (typeof body !== "object" || body === null || Array.isArray(body)) {
+    return asJsonResponse(invalidRequest("The UI configuration must be a JSON object."));
   }
 
-  const current = (getConfig<UiConfig>(CONFIG_KEY) ?? {}) as UiConfig;
-  const merged = { ...current, ...body };
   try {
-    setConfig(CONFIG_KEY, merged);
-    return NextResponse.json({ config: merged });
+    const config = { ...(getConfig<UiConfig>(ConfigKey) ?? {}), ...(body as UiConfig) };
+    setConfig(ConfigKey, config);
+    return asJsonResponse(success({ config }));
   } catch {
-    return NextResponse.json(
-      { errors: ["could not save config"] },
-      { status: 500 },
-    );
+    return asJsonResponse(serviceUnavailable(Dependency.Storage));
   }
 }

@@ -23,7 +23,7 @@ export default function SettingsLayout({
 
   return (
     <div className="flex h-full flex-col">
-      <header className="border-b px-8 pt-8">
+      <header className="border-b px-4 pt-5 sm:px-8 sm:pt-8">
         <PageHeader
           title="Settings"
           description="Your profile, UI preferences, namespaces, and server configuration."

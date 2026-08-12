@@ -21,9 +21,18 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files
-.env
-.env*.local
+# env files (examples stay tracked)
+.env*
+!.env.example
+
+# Persistent runtime state and local credentials
+.data/
+data/
+*.pem
+*.key
+*.p12
+*.pfx
+.npmrc
 
 # typescript
 *.tsbuildinfo

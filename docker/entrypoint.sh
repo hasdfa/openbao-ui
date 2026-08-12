@@ -6,10 +6,14 @@ OPENBAO_ADDR="${OPENBAO_ADDR:-http://127.0.0.1:8200}"
 
 start_openbao() {
   if [ "${BAO_DEV:-0}" = "1" ]; then
-    echo "[entrypoint] starting OpenBao in DEV mode (root token: ${BAO_DEV_ROOT_TOKEN_ID:-root})"
+    if [ "${NODE_ENV:-production}" = "production" ]; then
+      echo "[entrypoint] BAO_DEV is forbidden in production" >&2
+      exit 1
+    fi
+    : "${BAO_DEV_ROOT_TOKEN_ID:?BAO_DEV_ROOT_TOKEN_ID is required when BAO_DEV=1}"
+    echo "[entrypoint] starting OpenBao in DEV mode"
     # Dev mode is unsealed and in-memory — convenient, NOT for production.
-    BAO_DEV_ROOT_TOKEN_ID="${BAO_DEV_ROOT_TOKEN_ID:-root}" \
-      bao server -dev -dev-listen-address=127.0.0.1:8200 &
+    bao server -dev -dev-root-token-id="$BAO_DEV_ROOT_TOKEN_ID" -dev-listen-address=127.0.0.1:8200 &
   else
     echo "[entrypoint] starting OpenBao with /bao/config/openbao.hcl"
     bao server -config=/bao/config/openbao.hcl &

@@ -25,7 +25,7 @@ export default function AccessLayout({
 
   return (
     <div className="flex h-full flex-col">
-      <header className="border-b px-8 pt-8">
+      <header className="min-w-0 border-b px-4 pt-5 sm:px-8 sm:pt-8">
         <PageHeader
           title="Access"
           description="Policies, capabilities, tokens, and leases."

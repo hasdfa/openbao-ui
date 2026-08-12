@@ -17,6 +17,20 @@ function parseJsonSafe(text: string) {
   }
 }
 
+type LocalProxyFailure = {
+  ok: false;
+  error: { code: string; message: string };
+};
+
+function isLocalProxyFailure(value: unknown): value is LocalProxyFailure {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  if (candidate.ok !== false || typeof candidate.error !== "object" || candidate.error === null) {
+    return false;
+  }
+  const error = candidate.error as Record<string, unknown>;
+  return typeof error.code === "string" && typeof error.message === "string";
+}
 export class BaoError extends Error {
   status: number;
   errors: string[];
@@ -77,9 +91,11 @@ export async function baoFetch<T = unknown>({
   const data = parseJsonSafe(text);
 
   if (!res.ok) {
-    const errors: string[] = data?.errors?.length
+    const errors: string[] = Array.isArray(data?.errors) && data.errors.every((error: unknown) => typeof error === "string")
       ? data.errors
-      : [`Request failed (${res.status})`];
+      : isLocalProxyFailure(data)
+        ? [data.error.message]
+        : [`Request failed (${res.status})`];
     throw new BaoError(res.status, errors);
   }
   return data as T;

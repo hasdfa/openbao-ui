@@ -1,76 +1,98 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 
 import { isCrossSiteRequest } from "@/lib/csrf";
 import { getConfig, setConfig } from "@/lib/db";
-import { DEFAULT_ROLE_TEMPLATES, type RoleTemplate } from "@/lib/role-defaults";
-import { getToken } from "@/lib/session";
-import { isOperator } from "@/lib/ui-admin";
+import {
+  asJsonResponse,
+  Dependency,
+  forbidden,
+  invalidRequest,
+  payloadTooLarge,
+  serviceUnavailable,
+  success,
+} from "@/lib/http/response";
+import {
+  authorizeMetadataOperator,
+  authorizeMetadataRequest,
+} from "@/lib/metadata-session";
+import {
+  DEFAULT_ROLE_TEMPLATES,
+  isRoleTemplate,
+  type RoleTemplate,
+} from "@/lib/role-defaults";
+import { parseJsonBody, RequestBodyError } from "@/lib/request-body";
 
-/**
- * Role-template catalog (the Team view's standard roles), per namespace. The
- * namespace is always taken from the caller's `X-Vault-Namespace` header (never
- * a query/body param), so it can't be spoofed to read/write another namespace.
- *   GET /ui2/api/role-templates  — authenticated; seeded with the built-in
- *       defaults until an operator customizes them.
- *   PUT /ui2/api/role-templates  — operator only; saves the list.
- *
- * Templates are non-secret presentation/config data; materializing one into an
- * actual policy + group happens client-side via the OpenBao API.
- */
+/** Role-template catalog, seeded by domain defaults until customized. */
 export const dynamic = "force-dynamic";
 
-const key = (ns: string) => `role-templates::${ns}`;
+const key = (namespace: string) => `role-templates::${namespace}`;
+const MaxRoleTemplatesBodyBytes = 64 * 1024;
+
+type RoleTemplatesPayload = { templates?: RoleTemplate[] };
+
+function requestBodyFailure(error: unknown) {
+  if (error instanceof RequestBodyError && error.status === 413) {
+    return payloadTooLarge("The role-template request body is too large.");
+  }
+  return invalidRequest("The request body must be valid JSON.");
+}
 
 export async function GET(req: NextRequest) {
-  const token = await getToken();
-  if (!token) {
-    return NextResponse.json({ errors: ["not authenticated"] }, { status: 401 });
+  const authorization = await authorizeMetadataRequest(req.headers);
+  if (authorization.response) return authorization.response;
+  const operatorRejection = await authorizeMetadataOperator(
+    authorization.session,
+  );
+  if (operatorRejection) return operatorRejection;
+
+  try {
+    const templates =
+      getConfig<RoleTemplate[]>(key(authorization.session.namespace)) ??
+      DEFAULT_ROLE_TEMPLATES;
+    return asJsonResponse(success({ templates }));
+  } catch {
+    return asJsonResponse(serviceUnavailable(Dependency.Storage));
   }
-  const ns = req.headers.get("x-vault-namespace") ?? "";
-  const stored = getConfig<RoleTemplate[]>(key(ns));
-  return NextResponse.json({ templates: stored ?? DEFAULT_ROLE_TEMPLATES });
 }
 
 export async function PUT(req: NextRequest) {
-  const token = await getToken();
-  if (!token) {
-    return NextResponse.json({ errors: ["not authenticated"] }, { status: 401 });
-  }
+  const authorization = await authorizeMetadataRequest(req.headers);
+  if (authorization.response) return authorization.response;
+  const { session } = authorization;
+
   if (isCrossSiteRequest(req)) {
-    return NextResponse.json(
-      { errors: ["cross-site request blocked"] },
-      { status: 403 },
-    );
-  }
-  // Namespace comes from the caller's header and gates the operator check, so
-  // templates can only be written for a namespace the caller administers.
-  const ns = req.headers.get("x-vault-namespace") ?? "";
-  if (!(await isOperator(token, ns))) {
-    return NextResponse.json(
-      { errors: ["forbidden: requires mount-management capability"] },
-      { status: 403 },
-    );
+    return asJsonResponse(forbidden("Cross-site requests are not allowed."));
   }
 
-  let body: { templates?: RoleTemplate[] };
+  const operatorRejection = await authorizeMetadataOperator(session);
+  if (operatorRejection) return operatorRejection;
+
+  let payload: RoleTemplatesPayload;
   try {
-    body = (await req.json()) as typeof body;
-  } catch {
-    return NextResponse.json({ errors: ["invalid JSON"] }, { status: 400 });
+    const parsed = await parseJsonBody<unknown>(req, MaxRoleTemplatesBodyBytes);
+    if (
+      typeof parsed !== "object" ||
+      parsed === null ||
+      !Array.isArray((parsed as RoleTemplatesPayload).templates) ||
+      !(parsed as RoleTemplatesPayload).templates?.every(isRoleTemplate)
+    ) {
+      return asJsonResponse(
+        invalidRequest("templates must be an array of valid role templates."),
+      );
+    }
+    payload = parsed as RoleTemplatesPayload;
+  } catch (error) {
+    return asJsonResponse(requestBodyFailure(error));
   }
-  if (!Array.isArray(body.templates)) {
-    return NextResponse.json(
-      { errors: ["templates must be an array"] },
-      { status: 400 },
-    );
+
+  if (!Array.isArray(payload.templates)) {
+    return asJsonResponse(invalidRequest("templates must be an array."));
   }
+
   try {
-    setConfig(key(ns), body.templates);
-    return NextResponse.json({ templates: body.templates });
+    setConfig(key(session.namespace), payload.templates);
+    return asJsonResponse(success({ templates: payload.templates }));
   } catch {
-    return NextResponse.json(
-      { errors: ["could not save templates"] },
-      { status: 500 },
-    );
+    return asJsonResponse(serviceUnavailable(Dependency.Storage));
   }
 }

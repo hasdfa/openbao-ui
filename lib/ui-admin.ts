@@ -21,14 +21,10 @@ export async function isOperator(
   token: string,
   namespace?: string,
 ): Promise<boolean> {
-  try {
-    const res = await openbao.capabilitiesSelf(token, MOUNT_PATHS, namespace);
-    const caps = MOUNT_PATHS.flatMap(
-      (p) => (res.data?.[p] as string[] | undefined) ?? [],
-    );
-    return caps.some((c) => ADMIN_CAPS.has(c));
-  } catch {
-    return false;
-  }
+  const res = await openbao.capabilitiesSelf(token, MOUNT_PATHS, namespace);
+  const caps = MOUNT_PATHS.flatMap(
+    (path) => (res.data?.[path] as string[] | undefined) ?? [],
+  );
+  return caps.some((capability) => ADMIN_CAPS.has(capability));
 }
 

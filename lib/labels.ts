@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { API_BASE } from "@/lib/base-path";
+import { readHttpEnvelope } from "@/lib/http/client";
 
 import { useNamespace } from "@/lib/namespace";
 
@@ -36,14 +37,12 @@ export function useLabels(ns?: string) {
   return useQuery({
     queryKey: ["ui-labels", target],
     queryFn: async (): Promise<LabelMap> => {
-      const res = await fetch(
-        `${API_BASE}/labels?namespace=${encodeURIComponent(target)}`,
-        { headers: { "x-vault-namespace": target } },
-      );
-      if (!res.ok) return {};
-      const data = (await res.json()) as { labels?: Label[] };
+      const response = await fetch(`${API_BASE}/labels`, {
+        headers: { "x-vault-namespace": target },
+      });
+      const data = await readHttpEnvelope<{ labels: Label[] }>(response);
       const map: LabelMap = {};
-      for (const l of data.labels ?? []) map[labelKey(l.scope, l.ref)] = l;
+      for (const label of data.labels) map[labelKey(label.scope, label.ref)] = label;
       return map;
     },
     staleTime: 30_000,
@@ -66,21 +65,15 @@ export function useSetLabel(ns?: string) {
   return useMutation({
     meta: { success: "Saved" },
     mutationFn: async (input: SetLabelInput) => {
-      const res = await fetch(`${API_BASE}/labels`, {
+      const response = await fetch(`${API_BASE}/labels`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
           "x-vault-namespace": target,
         },
-        body: JSON.stringify({ namespace: target, ...input }),
+        body: JSON.stringify(input),
       });
-      if (!res.ok) {
-        const data = (await res.json().catch(() => ({}))) as {
-          errors?: string[];
-        };
-        throw new Error(data.errors?.[0] ?? `Request failed (${res.status})`);
-      }
-      return res.json();
+      return readHttpEnvelope<{ label: Label }>(response);
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["ui-labels", target] }),
   });
@@ -98,11 +91,12 @@ export function useClearLabel(ns?: string) {
   return useMutation({
     meta: { silentError: true },
     mutationFn: async (input: { scope: LabelScope; ref: string }) => {
-      await fetch(`${API_BASE}/labels`, {
+      const response = await fetch(`${API_BASE}/labels`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", "x-vault-namespace": target },
-        body: JSON.stringify({ namespace: target, scope: input.scope, ref: input.ref }),
+        body: JSON.stringify(input),
       });
+      await readHttpEnvelope<{ label: Label }>(response);
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["ui-labels", target] }),
   });

@@ -5,6 +5,7 @@
  * Base address comes from OPENBAO_ADDR (the in-container OpenBao in Docker).
  */
 const OPENBAO_ADDR = process.env.OPENBAO_ADDR ?? "http://127.0.0.1:8200";
+const OpenBaoRequestTimeoutMs = 10_000;
 
 /** Parse a response body as JSON, tolerating empty/non-JSON payloads (HTML
  *  error pages, proxy responses) by returning null so callers fall back to
@@ -17,11 +18,6 @@ function parseJsonSafe(text: string) {
     return null;
   }
 }
-
-export type OpenBaoError = {
-  status: number;
-  errors: string[];
-};
 
 export class OpenBaoRequestError extends Error {
   status: number;
@@ -44,16 +40,24 @@ type RequestOptions = {
 
 async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
   const { method = "GET", token, body, namespace } = opts;
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
   if (token) headers["X-Vault-Token"] = token;
   if (namespace) headers["X-Vault-Namespace"] = namespace;
 
-  const res = await fetch(`${OPENBAO_ADDR}/v1/${path.replace(/^\/+/, "")}`, {
-    method,
-    headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-    cache: "no-store",
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${OPENBAO_ADDR}/v1/${path.replace(/^\/+/, "")}`, {
+      method,
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      cache: "no-store",
+      signal: AbortSignal.timeout(OpenBaoRequestTimeoutMs),
+    });
+  } catch {
+    throw new OpenBaoRequestError(503, ["OpenBao is temporarily unavailable."]);
+  }
 
   const text = await res.text();
   const data = parseJsonSafe(text);
@@ -100,23 +104,23 @@ export type AuthResponse = {
 };
 
 export type MountsResponse = {
-  data: Record<
-    string,
-    { type: string; description: string; accessor: string }
-  >;
+  data: Record<string, { type: string; description: string; accessor: string }>;
 };
 
 export const openbao = {
   /** Validate a raw token and return its metadata. */
-  lookupSelf: (token: string) =>
-    request<TokenLookup>("auth/token/lookup-self", { token }),
+  lookupSelf: (token: string, namespace?: string) =>
+    request<TokenLookup>("auth/token/lookup-self", { token, namespace }),
 
   /** Username/password login -> returns a client token in `auth`. */
   userpassLogin: (mount: string, username: string, password: string) =>
-    request<AuthResponse>(`auth/${mount}/login/${encodeURIComponent(username)}`, {
-      method: "POST",
-      body: { password },
-    }),
+    request<AuthResponse>(
+      `auth/${mount}/login/${encodeURIComponent(username)}`,
+      {
+        method: "POST",
+        body: { password },
+      },
+    ),
 
   /** LDAP login. */
   ldapLogin: (mount: string, username: string, password: string) =>
@@ -158,6 +162,10 @@ export const openbao = {
   /** Renew the current token; returns the new lease duration. */
   renewSelf: (token: string) =>
     request<AuthResponse>("auth/token/renew-self", { method: "POST", token }),
+
+  /** Revoke the current bearer during logout; failures must not prevent cookie clearing. */
+  revokeSelf: (token: string) =>
+    request<void>("auth/token/revoke-self", { method: "POST", token }),
 
   /** Unauthenticated: current seal status of the instance. */
   sealStatus: () => request<SealStatus>("sys/seal-status"),

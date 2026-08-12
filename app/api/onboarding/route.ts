@@ -1,65 +1,85 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 
 import { isCrossSiteRequest } from "@/lib/csrf";
 import { getConfig, setConfig } from "@/lib/db";
-import { getToken } from "@/lib/session";
+import {
+  asJsonResponse,
+  Dependency,
+  forbidden,
+  invalidRequest,
+  payloadTooLarge,
+  serviceUnavailable,
+  success,
+} from "@/lib/http/response";
+import { authorizeMetadataRequest } from "@/lib/metadata-session";
+import { parseJsonBody, RequestBodyError } from "@/lib/request-body";
 
-/**
- * Per-namespace onboarding progress for the "Getting started" checklist.
- *   GET /ui2/api/onboarding?namespace=<ns>
- *   PUT /ui2/api/onboarding   { namespace?, dismissed?, steps? }  (shallow-merged)
- *
- * Stores only non-derivable bits (dismissed flag + manual step marks); the
- * checklist derives most progress from live OpenBao state. Writes need a valid
- * session but not operator rights — dismissing/marking is benign UI state.
- */
+/** Per-namespace progress for the non-secret getting-started checklist. */
 export const dynamic = "force-dynamic";
 
-const key = (ns: string) => `onboarding::${ns}`;
+const key = (namespace: string) => `onboarding::${namespace}`;
+const MaxOnboardingBodyBytes = 16 * 1024;
 
 type Onboarding = { dismissed?: boolean; steps?: Record<string, boolean> };
 
-export async function GET(req: NextRequest) {
-  const token = await getToken();
-  if (!token) {
-    return NextResponse.json({ errors: ["not authenticated"] }, { status: 401 });
+function isOnboarding(value: unknown): value is Onboarding {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  if (candidate.dismissed !== undefined && typeof candidate.dismissed !== "boolean") return false;
+  return (
+    candidate.steps === undefined ||
+    (typeof candidate.steps === "object" &&
+      candidate.steps !== null &&
+      Object.values(candidate.steps).every((step) => typeof step === "boolean"))
+  );
+}
+
+function requestBodyFailure(error: unknown) {
+  if (error instanceof RequestBodyError && error.status === 413) {
+    return payloadTooLarge("The onboarding request body is too large.");
   }
-  const ns = req.headers.get("x-vault-namespace") ?? "";
-  return NextResponse.json({ onboarding: getConfig<Onboarding>(key(ns)) ?? {} });
+  return invalidRequest("The request body must be valid JSON.");
+}
+
+export async function GET(req: NextRequest) {
+  const authorization = await authorizeMetadataRequest(req.headers);
+  if (authorization.response) return authorization.response;
+  try {
+    const onboarding = getConfig<Onboarding>(key(authorization.session.namespace)) ?? {};
+    return asJsonResponse(success({ onboarding }));
+  } catch {
+    return asJsonResponse(serviceUnavailable(Dependency.Storage));
+  }
 }
 
 export async function PUT(req: NextRequest) {
-  const token = await getToken();
-  if (!token) {
-    return NextResponse.json({ errors: ["not authenticated"] }, { status: 401 });
-  }
+  const authorization = await authorizeMetadataRequest(req.headers);
+  if (authorization.response) return authorization.response;
   if (isCrossSiteRequest(req)) {
-    return NextResponse.json(
-      { errors: ["cross-site request blocked"] },
-      { status: 403 },
-    );
+    return asJsonResponse(forbidden("Cross-site requests are not allowed."));
   }
-  let body: Onboarding & { namespace?: string };
+
+  let patch: unknown;
   try {
-    body = (await req.json()) as typeof body;
-  } catch {
-    return NextResponse.json({ errors: ["invalid JSON"] }, { status: 400 });
+    patch = await parseJsonBody<unknown>(req, MaxOnboardingBodyBytes);
+  } catch (error) {
+    return asJsonResponse(requestBodyFailure(error));
   }
-  // Scope onboarding state to the caller's namespace (header), not the body.
-  const ns = req.headers.get("x-vault-namespace") ?? "";
-  const current = (getConfig<Onboarding>(key(ns)) ?? {}) as Onboarding;
-  const merged: Onboarding = {
-    ...current,
-    ...(body.dismissed !== undefined ? { dismissed: body.dismissed } : {}),
-    steps: { ...current.steps, ...body.steps },
-  };
+  if (!isOnboarding(patch)) {
+    return asJsonResponse(invalidRequest("onboarding data is invalid."));
+  }
+
   try {
-    setConfig(key(ns), merged);
-    return NextResponse.json({ onboarding: merged });
+    const storageKey = key(authorization.session.namespace);
+    const current = getConfig<Onboarding>(storageKey) ?? {};
+    const onboarding: Onboarding = {
+      ...current,
+      ...(patch.dismissed === undefined ? {} : { dismissed: patch.dismissed }),
+      steps: { ...current.steps, ...patch.steps },
+    };
+    setConfig(storageKey, onboarding);
+    return asJsonResponse(success({ onboarding }));
   } catch {
-    return NextResponse.json(
-      { errors: ["could not save onboarding"] },
-      { status: 500 },
-    );
+    return asJsonResponse(serviceUnavailable(Dependency.Storage));
   }
 }

@@ -1,28 +1,36 @@
-import { NextResponse } from "next/server";
-
 import { isCrossSiteRequest } from "@/lib/csrf";
+import {
+  asJsonResponse,
+  Dependency,
+  forbidden,
+  serviceUnavailable,
+  success,
+  unauthorized,
+} from "@/lib/http/response";
 import { openbao, OpenBaoRequestError } from "@/lib/openbao";
-import { getToken, setToken } from "@/lib/session";
+import { clearToken, getToken, setToken } from "@/lib/session";
 
 /** POST /ui2/api/auth/renew — renew-self and refresh the cookie lifetime. */
 export async function POST(req: Request) {
   if (isCrossSiteRequest(req)) {
-    return NextResponse.json({ error: "cross-site request blocked" }, { status: 403 });
+    return asJsonResponse(forbidden("Cross-site requests are not allowed."));
   }
+
   const token = await getToken();
   if (!token) {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    return asJsonResponse(unauthorized());
   }
+
   try {
-    const res = await openbao.renewSelf(token);
-    const ttl = res.auth.lease_duration;
-    await setToken(res.auth.client_token || token, ttl);
-    return NextResponse.json({ ttl });
-  } catch (err) {
-    const msg =
-      err instanceof OpenBaoRequestError
-        ? err.errors.join(", ")
-        : "Renew failed";
-    return NextResponse.json({ error: msg }, { status: 400 });
+    const renewal = await openbao.renewSelf(token);
+    const ttl = renewal.auth.lease_duration;
+    await setToken(renewal.auth.client_token || token, ttl);
+    return asJsonResponse(success({ ttl }));
+  } catch (error) {
+    if (error instanceof OpenBaoRequestError && error.status === 403) {
+      await clearToken();
+      return asJsonResponse(unauthorized());
+    }
+    return asJsonResponse(serviceUnavailable(Dependency.OpenBao));
   }
 }

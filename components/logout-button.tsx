@@ -2,6 +2,7 @@
 
 import { LogOut } from "lucide-react";
 import { API_BASE } from "@/lib/base-path";
+import { readHttpEnvelope } from "@/lib/http/client";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
@@ -14,13 +15,8 @@ export function LogoutButton() {
   async function logout() {
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/auth/logout`, { method: "POST" });
-      if (!res.ok) {
-        // Non-2xx: don't navigate away on a failed logout — re-enable the
-        // button so the user can retry instead of being stuck disabled.
-        setLoading(false);
-        return;
-      }
+      const response = await fetch(`${API_BASE}/auth/logout`, { method: "POST" });
+      await readHttpEnvelope<Record<never, never>>(response);
       router.push("/login");
       router.refresh();
     } catch {

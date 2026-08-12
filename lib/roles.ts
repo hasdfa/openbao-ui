@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { API_BASE } from "@/lib/base-path";
+import { readHttpEnvelope } from "@/lib/http/client";
 
 import { baoFetch, BaoError } from "@/lib/bao-client";
 import { useNamespace } from "@/lib/namespace";
@@ -15,13 +16,11 @@ export function useRoleTemplates() {
   return useQuery({
     queryKey: ["role-templates", namespace],
     queryFn: async (): Promise<RoleTemplate[]> => {
-      const res = await fetch(
-        `${API_BASE}/role-templates?namespace=${encodeURIComponent(namespace)}`,
-        { headers: { "x-vault-namespace": namespace } },
-      );
-      if (!res.ok) return [];
-      const data = (await res.json()) as { templates?: RoleTemplate[] };
-      return data.templates ?? [];
+      const response = await fetch(`${API_BASE}/role-templates`, {
+        headers: { "x-vault-namespace": namespace },
+      });
+      const data = await readHttpEnvelope<{ templates: RoleTemplate[] }>(response);
+      return data.templates;
     },
   });
 }
@@ -32,19 +31,15 @@ export function useSaveRoleTemplates() {
   return useMutation({
     meta: { success: "Roles saved" },
     mutationFn: async (templates: RoleTemplate[]) => {
-      const res = await fetch(`${API_BASE}/role-templates`, {
+      const response = await fetch(`${API_BASE}/role-templates`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
           "x-vault-namespace": namespace,
         },
-        body: JSON.stringify({ namespace, templates }),
+        body: JSON.stringify({ templates }),
       });
-      if (!res.ok) {
-        const data = (await res.json().catch(() => ({}))) as { errors?: string[] };
-        throw new Error(data.errors?.[0] ?? `Request failed (${res.status})`);
-      }
-      return res.json();
+      return readHttpEnvelope<{ templates: RoleTemplate[] }>(response);
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["role-templates", namespace] }),
   });

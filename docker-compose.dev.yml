@@ -1,0 +1,20 @@
+services:
+  openbao-ui:
+    build:
+      context: .
+    image: openbao-ui:dev
+    init: true
+    pids_limit: 256
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      NODE_ENV: development
+      OPENBAO_UI_PUBLIC_URL: http://localhost:3000
+      BAO_DEV: "1"
+      BAO_DEV_ROOT_TOKEN_ID: ${BAO_DEV_ROOT_TOKEN_ID:?set a development-only token in .env}
+      # Development/E2E needs independent login sessions; edge production limits remain authoritative.
+      BAO_LOGIN_RATE_LIMIT: ${BAO_LOGIN_RATE_LIMIT:-100}

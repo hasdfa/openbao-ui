@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { useAppCredentials } from "@/lib/app-credentials";
 import { Input } from "@/components/ui/input";
 import { Label as FieldLabel } from "@/components/ui/label";
+import { SelectField } from "@/components/ui/select-field";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { buildAppRoleSetup, buildSnippets, type GuideAuth } from "@/lib/guides";
@@ -49,7 +50,7 @@ export default function GuidesPage() {
   const envName = (m: string) => labels?.[labelKey("environment", `${m}/`)]?.label || m;
 
   return (
-    <div className="mx-auto max-w-4xl p-8">
+    <div className="mx-auto w-full min-w-0 max-w-4xl p-8">
       <PageHeader
         title={
           <span className="flex items-center gap-2">
@@ -74,18 +75,15 @@ export default function GuidesPage() {
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="flex flex-col gap-2">
                 <FieldLabel htmlFor="guide-env">Environment</FieldLabel>
-                <select
+                <SelectField
                   id="guide-env"
+                  onValueChange={setMount}
+                  options={envs.map((environment) => ({
+                    value: environment,
+                    label: `${envName(environment)} (${environment})`,
+                  }))}
                   value={mount}
-                  onChange={(e) => setMount(e.target.value)}
-                  className="h-9 rounded-md border bg-transparent px-3 text-sm shadow-xs focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-                >
-                  {envs.map((m) => (
-                    <option key={m} value={m}>
-                      {envName(m)} ({m})
-                    </option>
-                  ))}
-                </select>
+                />
               </div>
               <div className="flex flex-col gap-2">
                 <FieldLabel htmlFor="guide-path">Secret path</FieldLabel>
