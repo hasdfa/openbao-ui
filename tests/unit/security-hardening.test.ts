@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 import { isCrossSiteRequest } from "@/lib/csrf";
 import { getCookieName, getOidcTransactionCookieNames } from "@/lib/session";
@@ -59,5 +61,21 @@ describe("login rate limiting", () => {
     expect(limiter.consume("127.0.0.1", 101)).toBe(true);
     expect(limiter.consume("127.0.0.1", 102)).toBe(false);
     expect(limiter.consume("127.0.0.1", 1_101)).toBe(true);
+  });
+});
+
+describe("production OpenBao storage wiring", () => {
+  it("keeps the configured storage path persistent in Compose and present in the image", () => {
+    const root = process.cwd();
+    const hcl = readFileSync(join(root, "docker/openbao.hcl"), "utf8");
+    const compose = readFileSync(join(root, "docker-compose.yml"), "utf8");
+    const dockerfile = readFileSync(join(root, "Dockerfile"), "utf8");
+    const storagePath = hcl.match(
+      /storage\s+"(?:file|raft)"\s*\{[\s\S]*?path\s*=\s*"([^"]+)"/,
+    )?.[1];
+
+    expect(storagePath).toBeDefined();
+    expect(compose).toContain(`:${storagePath}`);
+    expect(dockerfile).toContain(`mkdir -p ${storagePath}`);
   });
 });

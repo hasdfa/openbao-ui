@@ -77,9 +77,23 @@ Add HSTS at the TLS edge after confirming the domain is permanently HTTPS-only.
 ## Container runtime
 
 The production Compose configuration runs the container non-root with dropped
-Linux capabilities, `no-new-privileges`, an init process, and a PID limit. Keep
-OpenBao's storage bind mount persistent and protected; do not mount it into
-unrelated containers.
+Linux capabilities, `no-new-privileges`, an init process, and a PID limit. It
+uses the `openbao-data` named volume so Docker initializes `/bao/file` with the
+ownership required by the non-root `bao` user. Keep the storage volume
+persistent and protected; do not mount it into unrelated containers and never
+run `docker compose down -v` during an upgrade. If you replace the named volume
+with a host bind, create the host directory first and make it writable by the
+image's `bao` UID/GID (`100:101`) before starting the service.
+
+The bundled configuration currently keeps the existing `storage "file"` path at
+`/bao/file` so an image upgrade does not silently replace an initialized
+installation with an empty Raft backend. OpenBao 2.6 deprecates file storage and
+plans to remove it in 2.7. Migrate deliberately: stop the service, create and
+verify a backup, run the documented offline `bao operator migrate` file-to-Raft
+procedure into a separate persistent path, update the mounted configuration and
+volume mapping together, and keep the original data as rollback until the Raft
+instance has been initialized/unsealed and verified. Do not convert storage as a
+side effect of pulling a newer UI image.
 
 `BAO_DEV=1` is development-only. Production startup fails if development mode
 is enabled. Do not expose a development container publicly.

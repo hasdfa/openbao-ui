@@ -18,4 +18,7 @@ services:
       BAO_DEV: "0"
       OPENBAO_UI_PUBLIC_URL: ${OPENBAO_UI_PUBLIC_URL:?set the public HTTPS origin in .env}
     volumes:
-      - ./data/openbao:/bao/file
+      - openbao-data:/bao/file
+
+volumes:
+  openbao-data:
