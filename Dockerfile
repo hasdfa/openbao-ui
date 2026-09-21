@@ -52,7 +52,7 @@ ENV HOSTNAME=0.0.0.0
 # `init: true`). Keeps the image lean and free of build-time network deps.
 
 # Pull the `bao` binary from the OpenBao image stage (see OPENBAO_IMAGE above).
-COPY --from=openbao /bin/bao /usr/local/bin/bao
+COPY --from=openbao /usr/bin/bao /usr/local/bin/bao
 
 # Next.js standalone server + static assets.
 COPY --from=builder /app/.next/standalone ./

@@ -20,7 +20,7 @@ ENV NODE_ENV=production \
     PORT=3000 \
     HOSTNAME=0.0.0.0
 
-COPY --from=openbao /bin/bao /usr/local/bin/bao
+COPY --from=openbao /usr/bin/bao /usr/local/bin/bao
 COPY app/ ./
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY openbao.hcl /bao/config/openbao.hcl
