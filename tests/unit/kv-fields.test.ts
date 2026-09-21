@@ -54,6 +54,15 @@ describe("jsonToRows", () => {
   it("drops a key the user emptied instead of writing an empty-string field", () => {
     expect(rowsToData([{ key: "", value: "leftover" }])).toEqual({});
   });
+
+  it("refuses duplicate keys instead of silently keeping the last", () => {
+    expect(() =>
+      rowsToData([
+        { key: "token", value: "a" },
+        { key: "token", value: "b" },
+      ]),
+    ).toThrow(/Duplicate keys/);
+  });
 });
 
 describe("snapshotKvDraft", () => {

@@ -45,7 +45,7 @@ describe("metadata route boundaries", () => {
     expect(mocks.read).toHaveBeenCalledTimes(routes.length);
   });
   it("allows a token that can enter a foreign namespace to read metadata", async () => {
-    mocks.capabilities.mockResolvedValue({ data: { "sys/capabilities-self": ["update"] } });
+    mocks.capabilities.mockResolvedValue({ data: { "sys/mounts": ["read"] } });
     expect((await labels.GET(request("other"))).status).toBe(200);
     expect(mocks.read).toHaveBeenCalled();
   });

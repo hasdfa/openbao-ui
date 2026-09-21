@@ -13,6 +13,8 @@ import {
   parseDomains,
   planGoogleOidcRoles,
   resolveGoogleLogin,
+  resolveOidcStartRole,
+  safeAuthMount,
   ssoGroupName,
   teamPolicyWrite,
   uniqueRoleNames,
@@ -94,7 +96,7 @@ describe("planGoogleOidcRoles", () => {
     expect(plan.roles[0].body.token_policies).toEqual(["viewer"]);
     expect(plan.roles[0].body.groups_claim).toBeUndefined();
     expect(plan.fallbackRole).toBe("default");
-    expect(plan.ssoAliases).toEqual([]);
+    expect(plan.defaultOidcRole).toBe("default");
     expect(plan.teamRolesToEnsure).toEqual(["viewer"]);
   });
 
@@ -107,7 +109,6 @@ describe("planGoogleOidcRoles", () => {
       domainRoles: [],
     });
     expect(plan.roles[0].body.groups_claim).toBeUndefined();
-    expect(plan.ssoAliases).toEqual([]);
     expect(plan.teamRolesToEnsure).toEqual([]);
   });
 
@@ -129,7 +130,7 @@ describe("planGoogleOidcRoles", () => {
       { domain: "acme.com", role: "default" },
       { domain: "vendor.io", role: "default" },
     ]);
-    expect(plan.ssoAliases).toEqual([]);
+    expect(plan.defaultOidcRole).toBe("default");
     expect(uniqueRoleNames(plan.domainRoutes)).toEqual(["default"]);
     expect(plan.fallbackRole).toBeUndefined();
   });
@@ -153,7 +154,7 @@ describe("planGoogleOidcRoles", () => {
       token_policies: ["admin"],
       ...boundClaimsForDomains(["acme.com"]),
     });
-    expect(plan.ssoAliases).toEqual([]);
+    expect(plan.defaultOidcRole).toBeUndefined();
   });
 
   it("keeps leftover allowed domains on the default Team role", () => {
@@ -168,6 +169,18 @@ describe("planGoogleOidcRoles", () => {
       { name: "default-acme-com", domains: ["acme.com"], teamRole: "admin" },
       { name: "default", domains: ["vendor.io"], teamRole: "viewer" },
     ]);
+  });
+
+  it("refuses admin for unrestricted Google join", () => {
+    expect(() =>
+      planGoogleOidcRoles({
+        ...base,
+        defaultTeamRole: "admin",
+        restrict: false,
+        allowedDomains: [],
+        domainRoles: [],
+      }),
+    ).toThrow(/Admin cannot be granted/);
   });
 
   it("refuses per-domain roles without an allowlist (unrestricted fallback is unbound)", () => {
@@ -237,6 +250,32 @@ describe("sso group names", () => {
     expect(displayTeamRole("sso-editor")).toBe("editor");
     expect(isSsoGroup("sso-editor", "external")).toBe(true);
     expect(isSsoGroup("editor", "internal")).toBe(false);
+  });
+});
+
+describe("safeAuthMount / resolveOidcStartRole", () => {
+  it("rejects path-traversal mounts", () => {
+    expect(safeAuthMount("../../sys/init")).toBeNull();
+    expect(safeAuthMount("oidc/")).toBe("oidc");
+  });
+
+  it("allowlists roles from the stored spec and requires email when several exist", () => {
+    const spec = {
+      mount: "oidc",
+      roles: [
+        { domain: "acme.com", role: "default-acme-com" },
+        { domain: "vendor.io", role: "default-vendor-io" },
+      ],
+    };
+    expect(resolveOidcStartRole({ spec, mount: "oidc", role: "other" })).toEqual({
+      error: "Unknown sign-in role.",
+    });
+    expect(resolveOidcStartRole({ spec, mount: "oidc" })).toEqual({
+      error: "Work email is required.",
+    });
+    expect(
+      resolveOidcStartRole({ spec, mount: "oidc", email: "ada@acme.com" }),
+    ).toEqual({ role: "default-acme-com", hd: "acme.com" });
   });
 });
 

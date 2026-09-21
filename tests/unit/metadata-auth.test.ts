@@ -38,14 +38,14 @@ describe("metadata authorization", () => {
   });
 
   it("allows a token that can enter the requested namespace", async () => {
-    mocks.capabilities.mockResolvedValue({ data: { "sys/capabilities-self": ["update"] } });
+    mocks.capabilities.mockResolvedValue({ data: { "sys/mounts": ["read"] } });
     const result = await authorizeMetadata(new Request("http://localhost", { headers: { "x-vault-namespace": "other" } }));
     expect(result.error).toBeUndefined();
-    expect(mocks.capabilities).toHaveBeenCalledWith("valid-token", ["sys/capabilities-self"], "other");
+    expect(mocks.capabilities).toHaveBeenCalledWith("valid-token", ["sys/mounts"], "other");
   });
 
   it("denies a reachable namespace whose capabilities are deny", async () => {
-    mocks.capabilities.mockResolvedValue({ data: { "sys/capabilities-self": ["deny"] } });
+    mocks.capabilities.mockResolvedValue({ data: { "sys/mounts": ["deny"] } });
     expect(
       (await authorizeMetadata(new Request("http://localhost", { headers: { "x-vault-namespace": "other" } }))).error?.status,
     ).toBe(403);

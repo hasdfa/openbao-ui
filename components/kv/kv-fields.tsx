@@ -83,11 +83,14 @@ function toRows(data: Record<string, unknown>): Row[] {
 }
 
 export function rowsToData(rows: Row[]): Record<string, unknown> {
-  return Object.fromEntries(
-    rows
-      .filter((row) => !row.placeholder && !(row.key === "" && !row.keepEmptyKey))
-      .map(({ key, value }) => [key, value]),
+  const kept = rows.filter(
+    (row) => !row.placeholder && !(row.key === "" && !row.keepEmptyKey),
   );
+  const keys = kept.map((row) => row.key);
+  if (new Set(keys).size !== keys.length) {
+    throw new Error("Duplicate keys");
+  }
+  return Object.fromEntries(kept.map(({ key, value }) => [key, value]));
 }
 
 const hasNonString = (data: Record<string, unknown>) =>
@@ -141,10 +144,14 @@ export const KvKeyValueEditor = React.forwardRef<
   }));
 
   function switchToRaw() {
-    const out = rowsToData(rows);
-    setJson(JSON.stringify(out, null, 2));
-    setModeError(null);
-    setRaw(true);
+    try {
+      const out = rowsToData(rows);
+      setJson(JSON.stringify(out, null, 2));
+      setModeError(null);
+      setRaw(true);
+    } catch (err) {
+      setModeError(err instanceof Error ? err.message : "Invalid fields");
+    }
   }
 
   function switchToRows() {

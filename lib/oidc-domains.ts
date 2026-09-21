@@ -1,16 +1,11 @@
 /**
  * Google / OIDC email-domain restriction and Team-role assignment.
  *
- * OpenBao is the authority:
- * - `bound_claims` on `email` is the allowlist
- * - OIDC `token_policies` grant the Team role's policy at login
- * - `groups_claim` + external group aliases auto-join the matching SSO group
- *
- * The UI-config map is only a login hint for which OIDC role to request
- * before Google redirects. A stale hint still fails closed at OpenBao.
+ * OpenBao is the authority: `bound_claims` on `email` is the allowlist and
+ * OIDC `token_policies` grant the Team role at login. The UI-config map is
+ * only a server-side hint for which role to request before Google redirects.
  */
 
-export const GOOGLE_ISSUER = "https://accounts.google.com";
 export const DEFAULT_POLICY = "default";
 
 export type OidcDomainRoute = {
@@ -35,21 +30,14 @@ export type PlannedOidcRole = {
   domains: string[];
   teamRole: string;
   policies: string[];
-  groupsClaim: "hd" | "iss" | null;
   body: Record<string, unknown>;
-};
-
-export type PlannedSsoAlias = {
-  name: string;
-  teamRole: string;
 };
 
 export type GoogleOidcPlan = {
   roles: PlannedOidcRole[];
-  defaultOidcRole: string;
+  defaultOidcRole?: string;
   domainRoutes: OidcDomainRoute[];
   fallbackRole?: string;
-  ssoAliases: PlannedSsoAlias[];
   teamRolesToEnsure: string[];
 };
 
@@ -180,6 +168,41 @@ export function slugDomain(domain: string): string {
   return domain.replace(/\./g, "-");
 }
 
+const AUTH_MOUNT_RE = /^[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*$/;
+
+/** Reject path traversal before interpolating an unauthenticated OIDC mount. */
+export function safeAuthMount(raw: string | undefined): string | null {
+  const mount = (raw || "oidc").replace(/\/+$/g, "");
+  if (!mount || !AUTH_MOUNT_RE.test(mount)) return null;
+  if (mount.split("/").some((part) => part === "." || part === "..")) return null;
+  return mount;
+}
+
+export function resolveOidcStartRole(opts: {
+  spec: OidcDomainRoles | undefined;
+  mount: string;
+  email?: string;
+  role?: string;
+}): { role?: string; hd?: string } | { error: string } {
+  const spec =
+    opts.spec && safeAuthMount(opts.spec.mount) === opts.mount ? opts.spec : undefined;
+  if (opts.email) {
+    if (!spec) return { role: opts.role };
+    return resolveGoogleLogin(opts.email, spec.roles ?? [], spec.fallbackRole);
+  }
+  const allowed = new Set([
+    ...(spec?.roles ?? []).map((r) => r.role),
+    ...(spec?.fallbackRole ? [spec.fallbackRole] : []),
+  ]);
+  if (!spec || allowed.size === 0) return { role: opts.role };
+  if (opts.role) {
+    if (!allowed.has(opts.role)) return { error: "Unknown sign-in role." };
+    return { role: opts.role };
+  }
+  if (allowed.size === 1) return { role: [...allowed][0] };
+  return { error: "Work email is required." };
+}
+
 export function emailGlobs(domains: string[]): string[] {
   return domains.map((d) => `*@${d}`);
 }
@@ -287,6 +310,9 @@ export function planGoogleOidcRoles(input: {
   if (overrides.length > 0 && !input.restrict) {
     throw new Error("Per-domain roles require restricting sign-in to those domains");
   }
+  if (!input.restrict && defaultTeamRole === "admin") {
+    throw new Error("Admin cannot be granted to every Google account. Restrict to email domains first.");
+  }
   const overrideDomains = new Set(overrides.map((o) => o.domain));
 
   const allowed: string[] = [];
@@ -326,7 +352,6 @@ export function planGoogleOidcRoles(input: {
       domains: opts.domains,
       teamRole: opts.teamRole,
       policies,
-      groupsClaim: null,
       body: oidcRoleBody({
         redirectUri: input.redirectUri,
         policies,
@@ -377,10 +402,8 @@ export function planGoogleOidcRoles(input: {
 
   const unrestricted = roles.find((r) => r.domains.length === 0);
   const fallbackRole = unrestricted?.name;
-
-  // Group aliases keyed on Google `hd` would fail login for accounts that
-  // omit the claim. Token policies on the OIDC role are the grant.
-  const ssoAliases: PlannedSsoAlias[] = [];
+  const uniqueNames = uniqueRoleNames(domainRoutes);
+  if (fallbackRole && !uniqueNames.includes(fallbackRole)) uniqueNames.push(fallbackRole);
 
   const teamRolesToEnsure = [
     ...new Set(roles.map((r) => r.teamRole).filter((n) => n !== DEFAULT_POLICY)),
@@ -388,10 +411,9 @@ export function planGoogleOidcRoles(input: {
 
   return {
     roles,
-    defaultOidcRole: unrestricted?.name ?? roles[0]?.name ?? base,
+    defaultOidcRole: uniqueNames.length === 1 ? uniqueNames[0] : fallbackRole,
     domainRoutes,
     fallbackRole,
-    ssoAliases,
     teamRolesToEnsure,
   };
 }

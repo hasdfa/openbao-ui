@@ -5,8 +5,8 @@ import { API_BASE } from "@/lib/base-path";
 import { isCrossSiteRequest } from "@/lib/csrf";
 import { getConfig } from "@/lib/db";
 import {
-  normalizeDomain,
-  resolveGoogleLogin,
+  resolveOidcStartRole,
+  safeAuthMount,
   withGoogleHostedDomain,
   type OidcDomainRoles,
 } from "@/lib/oidc-domains";
@@ -31,23 +31,24 @@ export async function POST(req: NextRequest) {
   } catch {
     body = {};
   }
-  const mount = body.mount || "oidc";
-  let role = body.role || undefined;
-  let hd = body.hd ? normalizeDomain(body.hd) : null;
-  if (body.email) {
-    const cfg = (getConfig<{ oidcDomainRoles?: OidcDomainRoles }>("ui") ?? {}) as {
-      oidcDomainRoles?: OidcDomainRoles;
-    };
-    const spec = cfg.oidcDomainRoles;
-    if (spec && spec.mount === mount) {
-      const resolved = resolveGoogleLogin(body.email, spec.roles ?? [], spec.fallbackRole);
-      if ("error" in resolved) {
-        return NextResponse.json({ error: resolved.error }, { status: 400 });
-      }
-      role = resolved.role;
-      hd = resolved.hd ? normalizeDomain(resolved.hd) : null;
-    }
+  const mount = safeAuthMount(body.mount || "oidc");
+  if (!mount) {
+    return NextResponse.json({ error: "Invalid auth mount" }, { status: 400 });
   }
+  const cfg = (getConfig<{ oidcDomainRoles?: OidcDomainRoles }>("ui") ?? {}) as {
+    oidcDomainRoles?: OidcDomainRoles;
+  };
+  const resolved = resolveOidcStartRole({
+    spec: cfg.oidcDomainRoles,
+    mount,
+    email: body.email,
+    role: body.role,
+  });
+  if ("error" in resolved) {
+    return NextResponse.json({ error: resolved.error }, { status: 400 });
+  }
+  const role = resolved.role;
+  const hd = resolved.hd;
   const nonce = crypto.randomUUID();
   // Must match the role's allowed_redirect_uris, which the setup wizard registers
   // from the browser's window.location.origin — so derive the same browser-facing

@@ -32,14 +32,10 @@ export async function authorizeMetadata(req: Request): Promise<Authorization> {
     const ownNamespace = normalize(lookup.data.namespace_path ?? "");
     if (namespace !== ownNamespace) {
       try {
-        const caps = await openbao.capabilitiesSelf(
-          token,
-          ["sys/capabilities-self"],
-          namespace,
-        );
-        const granted =
-          caps.data?.["sys/capabilities-self"] ?? caps.data?.capabilities ?? [];
-        if (!granted.some((c) => c && c !== "deny")) {
+        const caps = await openbao.capabilitiesSelf(token, ["sys/mounts"], namespace);
+        const granted = caps.data?.["sys/mounts"] ?? caps.data?.capabilities ?? [];
+        const usable = new Set(["read", "list", "sudo", "root"]);
+        if (!granted.some((c) => usable.has(c))) {
           return deny("forbidden: namespace access required", 403);
         }
       } catch (err) {

@@ -96,6 +96,9 @@ export function GoogleOidcWizard({
     }
     setBusy(true);
     try {
+      setStep("Checking permission to save login settings…");
+      await setUiConfig.mutateAsync({});
+
       setStep("Enabling the OIDC method…");
       try {
         await baoFetch({
@@ -119,7 +122,7 @@ export function GoogleOidcWizard({
           oidc_discovery_url: GOOGLE_DISCOVERY,
           oidc_client_id: clientId.trim(),
           oidc_client_secret: clientSecret.trim(),
-          default_role: plan.defaultOidcRole,
+          ...(plan.defaultOidcRole ? { default_role: plan.defaultOidcRole } : {}),
         },
       });
 
