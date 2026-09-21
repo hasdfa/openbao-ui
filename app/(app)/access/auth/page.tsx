@@ -583,7 +583,7 @@ function EnableDialog({
 type FieldSpec = {
   key: string;
   label: string;
-  kind?: "text" | "password" | "textarea" | "list";
+  kind?: "text" | "password" | "textarea" | "list" | "json";
   placeholder?: string;
   /** Prefilled when adding a new role. `{redirect_uri}` expands to this app's
    *  OIDC callback so OIDC roles work out of the box. */
@@ -621,6 +621,13 @@ const FIELD_SPECS: Record<string, MethodSpec> = {
         { key: "groups_claim", label: "Groups claim", placeholder: "groups" },
         { key: "oidc_scopes", label: "OIDC scopes", kind: "list", placeholder: "openid, email, profile" },
         { key: "bound_audiences", label: "Bound audiences", kind: "list" },
+        { key: "bound_claims_type", label: "Bound claims type", placeholder: "string or glob" },
+        {
+          key: "bound_claims",
+          label: "Bound claims (JSON object)",
+          kind: "json",
+          placeholder: '{"email":["*@acme.com"]}',
+        },
         { key: "allowed_redirect_uris", label: "Allowed redirect URIs", kind: "list" },
         { key: "role_type", label: "Role type", placeholder: "oidc or jwt" },
       ],
@@ -677,10 +684,24 @@ function buildBody(fields: FieldSpec[], vals: Record<string, string>) {
   for (const f of fields) {
     const raw = vals[f.key];
     if (raw == null || raw === "") continue;
-    body[f.key] =
-      f.kind === "list"
-        ? raw.split(",").map((s) => s.trim()).filter(Boolean)
-        : raw;
+    if (f.kind === "list") {
+      body[f.key] = raw.split(",").map((s) => s.trim()).filter(Boolean);
+      continue;
+    }
+    if (f.kind === "json") {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        throw new Error(`${f.label} must be valid JSON`);
+      }
+      if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+        throw new Error(`${f.label} must be a JSON object`);
+      }
+      body[f.key] = parsed;
+      continue;
+    }
+    body[f.key] = raw;
   }
   return body;
 }
@@ -696,7 +717,7 @@ function DynField({
 }) {
   return (
     <Field label={field.label}>
-      {field.kind === "textarea" ? (
+      {field.kind === "textarea" || field.kind === "json" ? (
         <textarea
           value={value}
           onChange={(e) => onChange(e.target.value)}

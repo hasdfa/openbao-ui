@@ -452,6 +452,10 @@ test("auth: Google sign-in wizard renders", async ({ page }) => {
   // the callback redirect URI the operator must register with Google is shown
   await expect(page.getByText("/ui2/api/auth/oidc/callback")).toBeVisible();
   await expect(page.getByText("Client ID")).toBeVisible();
+  await expect(page.getByText("Allowed email domains")).toBeVisible();
+  await expect(page.getByPlaceholder("acme.com, vendor.io")).toBeVisible();
+  await page.getByRole("button", { name: "Different policies per domain" }).click();
+  await expect(page.getByRole("button", { name: "Add domain" })).toBeVisible();
   // close without submitting (no external network needed)
   await page.getByRole("button", { name: "Cancel" }).click();
 });

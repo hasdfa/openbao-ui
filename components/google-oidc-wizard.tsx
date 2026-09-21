@@ -1,7 +1,7 @@
 "use client";
 
 import { useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2 } from "lucide-react";
+import { CheckCircle2, Plus, Trash2 } from "lucide-react";
 import * as React from "react";
 
 import { Button } from "@/components/ui/button";
@@ -9,15 +9,22 @@ import { Dialog, DialogHeader } from "@/components/ui/dialog";
 import { Disclosure } from "@/components/ui/disclosure";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useAccessRoles } from "@/lib/access-roles";
 import { baoFetch, BaoError } from "@/lib/bao-client";
 import { useNamespace } from "@/lib/namespace";
+import {
+  planGoogleOidcRoles,
+  type DomainPolicyRow,
+} from "@/lib/oidc-domains";
+import { useRoleTemplates } from "@/lib/roles";
 import { oidcCallbackUrl, useSetUiConfig, useUiConfig } from "@/lib/ui-config";
 
 // One-click-ish setup for "Sign in with Google" on top of OpenBao's native
 // OIDC method. Composes the primitives: enable the mount, write provider config
-// (Google discovery), create a default JIT role wired to this app's callback,
-// surface the method on the login page (listing_visibility=unauth), and record
-// it as the default login method in the UI config.
+// (Google discovery), create JIT role(s) wired to this app's callback — optionally
+// bound to email domains with per-domain token policies — surface the method on
+// the login page (listing_visibility=unauth), and record it as the default
+// login method in the UI config.
 const GOOGLE_DISCOVERY = "https://accounts.google.com";
 
 const errMsg = (e: unknown) =>
@@ -34,10 +41,14 @@ export function GoogleOidcWizard({
   const setUiConfig = useSetUiConfig();
   const uiConfig = useUiConfig();
   const qc = useQueryClient();
+  const templates = useRoleTemplates();
+  const accessRoles = useAccessRoles();
 
   const [clientId, setClientId] = React.useState("");
   const [clientSecret, setClientSecret] = React.useState("");
   const [policies, setPolicies] = React.useState("default");
+  const [allowedDomains, setAllowedDomains] = React.useState("");
+  const [domainPolicies, setDomainPolicies] = React.useState<DomainPolicyRow[]>([]);
   const [mount, setMount] = React.useState("oidc");
   const [role, setRole] = React.useState("default");
   const [groupsClaim, setGroupsClaim] = React.useState("");
@@ -47,6 +58,13 @@ export function GoogleOidcWizard({
   const [step, setStep] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [done, setDone] = React.useState(false);
+
+  const knownRoles = React.useMemo(() => {
+    const names = new Set<string>();
+    for (const t of templates.data ?? []) names.add(t.name);
+    for (const r of accessRoles.data ?? []) names.add(r.name);
+    return [...names].sort();
+  }, [templates.data, accessRoles.data]);
 
   // Prefer the OPENBAO_UI_PUBLIC_URL override (if configured) so the role's
   // allowed_redirect_uris matches the redirect_uri the login route will send.
@@ -60,7 +78,20 @@ export function GoogleOidcWizard({
       return;
     }
     const m = mount.trim().replace(/\/$/, "") || "oidc";
-    const r = role.trim() || "default";
+    let plan;
+    try {
+      plan = planGoogleOidcRoles({
+        role,
+        policies,
+        allowedDomains,
+        domainPolicies,
+        groupsClaim,
+        redirectUri,
+      });
+    } catch (err) {
+      setError(errMsg(err));
+      return;
+    }
     setBusy(true);
     try {
       // 1. enable the OIDC auth mount (ignore "already in use")
@@ -89,28 +120,20 @@ export function GoogleOidcWizard({
           oidc_discovery_url: GOOGLE_DISCOVERY,
           oidc_client_id: clientId.trim(),
           oidc_client_secret: clientSecret.trim(),
-          default_role: r,
+          default_role: plan.defaultRole,
         },
       });
 
-      // 3. default JIT role — Google users authenticate into this role
-      setStep("Creating the default sign-in role…");
-      await baoFetch({
-        path: `auth/${m}/role/${r}`,
-        method: "POST",
-        namespace,
-        body: {
-          role_type: "oidc",
-          user_claim: "email",
-          oidc_scopes: ["openid", "email", "profile"],
-          allowed_redirect_uris: [redirectUri],
-          token_policies: policies
-            .split(",")
-            .map((p) => p.trim())
-            .filter(Boolean),
-          ...(groupsClaim.trim() ? { groups_claim: groupsClaim.trim() } : {}),
-        },
-      });
+      // 3. JIT role(s) — OpenBao bound_claims on email are the allowlist.
+      for (const planned of plan.roles) {
+        setStep(`Creating sign-in role ${planned.name}…`);
+        await baoFetch({
+          path: `auth/${m}/role/${planned.name}`,
+          method: "POST",
+          namespace,
+          body: planned.body,
+        });
+      }
 
       // 4. surface it on the (unauthenticated) login page
       setStep("Showing it on the login page…");
@@ -121,11 +144,13 @@ export function GoogleOidcWizard({
         body: { listing_visibility: "unauth", description: "Sign in with Google" },
       });
 
-      // 5. record it as the default method in the UI config
-      if (makeDefault) {
-        setStep("Saving UI preferences…");
-        await setUiConfig.mutateAsync({ defaultLoginMethod: m });
-      }
+      // 5. record default method + domain→role login hint (OpenBao still
+      //    enforces bound_claims; an empty list clears a previous restriction).
+      setStep("Saving UI preferences…");
+      await setUiConfig.mutateAsync({
+        ...(makeDefault ? { defaultLoginMethod: m } : {}),
+        oidcDomainRoles: { mount: m, roles: plan.domainRoutes },
+      });
 
       qc.invalidateQueries({ queryKey: ["auth-methods", namespace] });
       setStep(null);
@@ -147,8 +172,11 @@ export function GoogleOidcWizard({
             <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-emerald-600" />
             <div>
               Users can now choose <strong>Sign in with Google</strong> on the login
-              page. New users are provisioned automatically into the
-              <span className="font-mono"> {role || "default"}</span> role.
+              page. Access is the token policies on the OIDC role
+              {allowedDomains.trim() || domainPolicies.some((r) => r.domain.trim())
+                ? "; emails outside the allowed domains are rejected by OpenBao"
+                : ""}
+              .
             </div>
           </div>
           <div className="flex justify-end">
@@ -178,9 +206,104 @@ export function GoogleOidcWizard({
         <Field label="Client secret">
           <Input type="password" value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} className="font-mono" />
         </Field>
-        <Field label="Default token policies (comma-separated)">
+        <Field
+          label="Allowed email domains"
+          hint="Only Google accounts at these domains can sign in. Empty allows any Google account."
+        >
+          <Input
+            value={allowedDomains}
+            onChange={(e) => setAllowedDomains(e.target.value)}
+            className="font-mono"
+            placeholder="acme.com, vendor.io"
+          />
+        </Field>
+        <Field
+          label="Token policies (comma-separated)"
+          hint="Granted on every Google sign-in for domains without a row below. Use an existing policy or team role name."
+        >
           <Input value={policies} onChange={(e) => setPolicies(e.target.value)} className="font-mono" placeholder="default" />
         </Field>
+
+        <Disclosure label="Different policies per domain" count={domainPolicies.length || undefined}>
+          <div className="flex flex-col gap-3">
+            <p className="text-xs text-muted-foreground">
+              Each row becomes its own OpenBao OIDC role. Sign-in asks for work
+              email first when more than one role exists. Unknown domains are rejected.
+            </p>
+            {domainPolicies.map((row, i) => (
+              <div key={i} className="flex flex-col gap-2 rounded-md border p-2 sm:flex-row sm:items-end">
+                <div className="min-w-0 flex-1">
+                  <Label htmlFor={`oidc-domain-${i}`}>Domain</Label>
+                  <Input
+                    id={`oidc-domain-${i}`}
+                    value={row.domain}
+                    onChange={(e) =>
+                      setDomainPolicies((rows) =>
+                        rows.map((r, j) => (j === i ? { ...r, domain: e.target.value } : r)),
+                      )
+                    }
+                    className="font-mono"
+                    placeholder="acme.com"
+                  />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <Label htmlFor={`oidc-policies-${i}`}>Policies</Label>
+                  <Input
+                    id={`oidc-policies-${i}`}
+                    value={row.policies}
+                    onChange={(e) =>
+                      setDomainPolicies((rows) =>
+                        rows.map((r, j) => (j === i ? { ...r, policies: e.target.value } : r)),
+                      )
+                    }
+                    className="font-mono"
+                    placeholder="default"
+                  />
+                </div>
+                {knownRoles.length > 0 ? (
+                  <select
+                    aria-label={`Team role for domain ${i + 1}`}
+                    className="h-9 rounded-md border bg-transparent px-2 text-sm"
+                    value=""
+                    onChange={(e) => {
+                      const name = e.target.value;
+                      if (!name) return;
+                      setDomainPolicies((rows) =>
+                        rows.map((r, j) => (j === i ? { ...r, policies: name } : r)),
+                      );
+                    }}
+                  >
+                    <option value="">Team role…</option>
+                    {knownRoles.map((name) => (
+                      <option key={name} value={name}>
+                        {name}
+                      </option>
+                    ))}
+                  </select>
+                ) : null}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="size-11 shrink-0 md:size-9"
+                  aria-label={`Remove domain ${row.domain || i + 1}`}
+                  onClick={() => setDomainPolicies((rows) => rows.filter((_, j) => j !== i))}
+                >
+                  <Trash2 />
+                </Button>
+              </div>
+            ))}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="self-start"
+              onClick={() => setDomainPolicies((rows) => [...rows, { domain: "", policies: policies || "default" }])}
+            >
+              <Plus /> Add domain
+            </Button>
+          </div>
+        </Disclosure>
 
         <Disclosure label="Advanced">
           <div className="flex flex-col gap-3">
@@ -217,11 +340,20 @@ export function GoogleOidcWizard({
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
   return (
     <div className="flex flex-col gap-2">
       <Label>{label}</Label>
       {children}
+      {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
     </div>
   );
 }

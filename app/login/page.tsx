@@ -19,6 +19,12 @@ import { Disclosure } from "@/components/ui/disclosure";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { API_BASE, BASE_PATH } from "@/lib/base-path";
+import {
+  googleLoginHint,
+  matchDomainRole,
+  type OidcDomainRoles,
+  type OidcDomainRoute,
+} from "@/lib/oidc-domains";
 
 const LOGIN_ENDPOINT = `${API_BASE}/auth/login`;
 const OIDC_START = `${API_BASE}/auth/oidc/start`;
@@ -42,6 +48,7 @@ type Branding = {
 type UiConfig = {
   branding?: Branding;
   defaultLoginMethod?: string;
+  oidcDomainRoles?: OidcDomainRoles;
 };
 
 export default function LoginPage() {
@@ -54,12 +61,20 @@ export default function LoginPage() {
   );
 }
 
-async function startOidc(mount: string): Promise<{ authUrl?: string; error?: string }> {
+async function startOidc(
+  mount: string,
+  role?: string,
+  hd?: string,
+): Promise<{ authUrl?: string; error?: string }> {
   try {
     const res = await fetch(OIDC_START, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mount: mount || undefined }),
+      body: JSON.stringify({
+        mount: mount || undefined,
+        role: role || undefined,
+        hd: hd || undefined,
+      }),
     });
     const data = await res.json();
     if (!res.ok) return { error: data.error ?? "OIDC start failed" };
@@ -67,6 +82,12 @@ async function startOidc(mount: string): Promise<{ authUrl?: string; error?: str
   } catch {
     return { error: "Network error — is OpenBao reachable?" };
   }
+}
+
+function routesForMount(cfg: UiConfig, mount: string): OidcDomainRoute[] {
+  const spec = cfg.oidcDomainRoles;
+  if (!spec || spec.mount !== mount) return [];
+  return spec.roles ?? [];
 }
 
 function LoginForm() {
@@ -84,6 +105,11 @@ function LoginForm() {
   });
   const [error, setError] = useState<string | null>(search.get("error") || null);
   const [loading, setLoading] = useState(false);
+  const [pendingOidc, setPendingOidc] = useState<{
+    mount: string;
+    routes: OidcDomainRoute[];
+  } | null>(null);
+  const [workEmail, setWorkEmail] = useState("");
 
   // Login customization: discovered (unauth) methods + branding/default.
   const [discovered, setDiscovered] = useState<DiscoveredMethod[]>([]);
@@ -129,16 +155,42 @@ function LoginForm() {
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setF((s) => ({ ...s, [k]: e.target.value }));
 
-  async function oidcButton(mount: string) {
-    setError(null);
+  async function redirectOidc(mount: string, role?: string, hd?: string) {
     setLoading(true);
-    const { authUrl, error } = await startOidc(mount);
-    if (error || !authUrl) {
-      setError(error ?? "OpenBao returned no sign-in URL — check the OIDC role's allowed_redirect_uris.");
+    const { authUrl, error: startError } = await startOidc(mount, role, hd);
+    if (startError || !authUrl) {
+      setError(
+        startError ??
+          "OpenBao returned no sign-in URL — check the OIDC role's allowed_redirect_uris.",
+      );
       setLoading(false);
       return;
     }
     window.location.href = authUrl;
+  }
+
+  function oidcButton(mount: string) {
+    setError(null);
+    const routes = routesForMount(cfg, mount);
+    const hint = googleLoginHint(routes);
+    if (hint.askEmail) {
+      setPendingOidc({ mount, routes });
+      setWorkEmail("");
+      return;
+    }
+    void redirectOidc(mount, hint.role, hint.hd);
+  }
+
+  function submitWorkEmail(e: React.FormEvent) {
+    e.preventDefault();
+    if (!pendingOidc) return;
+    setError(null);
+    const match = matchDomainRole(workEmail, pendingOidc.routes);
+    if (!match) {
+      setError("That email domain isn't allowed.");
+      return;
+    }
+    void redirectOidc(pendingOidc.mount, match.role, match.domain);
   }
 
   async function submit(e: React.FormEvent) {
@@ -283,7 +335,39 @@ function LoginForm() {
         <CardContent>
           {error ? <p className="mb-4 text-sm text-destructive">{error}</p> : null}
 
-          {hasPrimary ? (
+          {pendingOidc ? (
+            <form onSubmit={submitWorkEmail} className="flex flex-col gap-4">
+              <Field label="Work email" htmlFor="work-email">
+                <Input
+                  id="work-email"
+                  type="email"
+                  autoComplete="username"
+                  autoFocus
+                  value={workEmail}
+                  onChange={(e) => setWorkEmail(e.target.value)}
+                  placeholder="you@acme.com"
+                />
+              </Field>
+              <p className="text-xs text-muted-foreground">
+                Used to pick the Google sign-in role for your domain. OpenBao still
+                checks the account Google returns.
+              </p>
+              <Button type="submit" disabled={loading || !workEmail.trim()}>
+                {loading ? "Signing in…" : "Continue with Google"}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={loading}
+                onClick={() => {
+                  setPendingOidc(null);
+                  setError(null);
+                }}
+              >
+                Back
+              </Button>
+            </form>
+          ) : hasPrimary ? (
             <div className="flex flex-col gap-4">
               <div className="flex flex-col gap-2">
                 {oidcMethods.map((m) => (
@@ -311,10 +395,18 @@ function LoginForm() {
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label,
+  htmlFor,
+  children,
+}: {
+  label: string;
+  htmlFor?: string;
+  children: React.ReactNode;
+}) {
   return (
     <div className="flex flex-col gap-2">
-      <Label>{label}</Label>
+      <Label htmlFor={htmlFor}>{label}</Label>
       {children}
     </div>
   );

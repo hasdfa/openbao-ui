@@ -31,6 +31,7 @@ const PUBLIC_KEYS = [
   "defaultLoginMethod",
   "hideTokenLogin",
   "loginMethodOrder",
+  "oidcDomainRoles",
 ] as const;
 
 type UiConfig = Record<string, unknown>;
