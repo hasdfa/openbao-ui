@@ -6,6 +6,7 @@ import {
   googleLoginHint,
   normalizeDomain,
   safeAuthMount,
+  safeBaoName,
   type OidcDomainRoles,
 } from "@/lib/oidc-domains";
 import { configuredOrigin } from "@/lib/request-origin";
@@ -47,14 +48,12 @@ function parseOidcDomainRoles(
     }
     const rec = row as Record<string, unknown>;
     const domain = typeof rec.domain === "string" ? normalizeDomain(rec.domain) : null;
-    const role = typeof rec.role === "string" ? rec.role.trim() : "";
+    const role = typeof rec.role === "string" ? safeBaoName(rec.role) : null;
     if (!domain || !role) return { error: "oidcDomainRoles.roles need a domain and role" };
     roles.push({ domain, role });
   }
   const fallbackRole =
-    typeof value.fallbackRole === "string" && value.fallbackRole.trim()
-      ? value.fallbackRole.trim()
-      : undefined;
+    typeof value.fallbackRole === "string" ? safeBaoName(value.fallbackRole) ?? undefined : undefined;
   return { spec: { mount, roles, fallbackRole } };
 }
 

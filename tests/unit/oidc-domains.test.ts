@@ -196,6 +196,19 @@ describe("planGoogleOidcRoles", () => {
     ).toThrow(/restricting sign-in/);
   });
 
+  it("rejects a path-like OIDC role name", () => {
+    expect(() =>
+      planGoogleOidcRoles({
+        ...base,
+        oidcRoleName: "../../sys",
+        defaultTeamRole: "viewer",
+        restrict: false,
+        allowedDomains: [],
+        domainRoles: [],
+      }),
+    ).toThrow(/Invalid OIDC role name/);
+  });
+
   it("refuses a restricted join with no domains", () => {
     expect(() =>
       planGoogleOidcRoles({

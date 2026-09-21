@@ -319,7 +319,8 @@ export function planGoogleOidcRoles(input: {
   domainRoles: DomainRoleRow[];
   redirectUri: string;
 }): GoogleOidcPlan {
-  const base = input.oidcRoleName.trim() || "default";
+  const base = safeBaoName(input.oidcRoleName.trim() || "default");
+  if (!base) throw new Error("Invalid OIDC role name");
   const defaultTeamRole = input.defaultTeamRole.trim() || DEFAULT_POLICY;
   const overrides = parseDomainRoleRows(input.domainRoles);
   if (overrides.length > 0 && !input.restrict) {

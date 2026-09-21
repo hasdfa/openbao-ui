@@ -18,6 +18,7 @@ import {
   displayTeamRole,
   planGoogleOidcRoles,
   safeAuthMount,
+  safeBaoName,
   teamPolicyWrite,
   type DomainRoleRow,
 } from "@/lib/oidc-domains";
@@ -147,7 +148,9 @@ export function GoogleOidcWizard({
         const stale = [
           ...(previous.roles ?? []).map((r) => r.role),
           previous.fallbackRole,
-        ].filter((name): name is string => !!name && !keep.has(name));
+        ]
+          .map((name) => (name ? safeBaoName(name) : null))
+          .filter((name): name is string => !!name && !keep.has(name));
         for (const name of stale) {
           setStep(`Removing previous sign-in role ${name}…`);
           try {
