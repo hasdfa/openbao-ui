@@ -6,6 +6,7 @@ import { API_BASE } from "@/lib/base-path";
 import { buildAccessPolicy, type AccessLevel, type EnvTarget } from "@/lib/access-policy";
 import { resolveEnvs, type EnvSelector } from "@/lib/access-roles";
 import { baoFetch, BaoError } from "@/lib/bao-client";
+import { safeAuthMount, safeBaoName } from "@/lib/oidc-domains";
 import { useNamespace } from "@/lib/namespace";
 
 // A machine identity for an app: one AppRole per environment (isolated), each
@@ -38,12 +39,14 @@ const slug = (s: string) =>
     .replace(/-+/g, "-")
     .replace(/^-|-$/g, "");
 
-/** Per-environment role + policy names (pure; unit-testable). */
+/** Unique names per issuance; display slugs are never used as identity keys. */
 export function credNames(app: string, env: string, level: AccessLevel) {
   const a = slug(app);
   const e = slug(env);
   const suffix = level === "viewer" ? "read" : level;
-  return { role: `${a}-${e}`, policy: `${a}-${e}-${suffix}` };
+  const id = crypto.randomUUID();
+  const name = `${a.slice(0, 40)}-${e.slice(0, 40)}-${id}`;
+  return { role: name, policy: `${name}-${suffix}` };
 }
 
 /** A stable per-environment identity for naming (folders layout disambiguated). */
@@ -99,6 +102,20 @@ async function ensureApprole(mount: string, namespace: string) {
   }
 }
 
+export async function assertCredentialNamesAvailable(
+  names: { role: string; policy: string }, mount: string, namespace: string,
+): Promise<void> {
+  for (const path of [`auth/${mount}/role/${names.role}`, `sys/policies/acl/${names.policy}`]) {
+    try {
+      await baoFetch({ path, namespace });
+    } catch (err) {
+      if (err instanceof BaoError && err.status === 404) continue;
+      throw err;
+    }
+    throw new Error("Credential resource already exists; refusing to overwrite it. Retry issuance with fresh names.");
+  }
+}
+
 /**
  * Issue an app credential: for EACH resolved environment, write a scoped policy,
  * create an AppRole bound to it, and fetch role_id + a fresh secret_id. Per-env
@@ -120,20 +137,29 @@ export function useIssueAppCredential() {
       paths?: string[];
       existing: AppCredential[];
     }): Promise<{ definition: AppCredential; issued: IssuedCred[] }> => {
-      const app = slug(vars.app);
-      if (!app) throw new Error("App name is required");
-      const mount = stripSlash(vars.mount || "approle");
+      const app = safeBaoName(vars.app);
+      if (!app) throw new Error("App name contains unsupported characters");
+      if (vars.existing.some((c) => sameCred(c, app, vars.env))) {
+        throw new Error("This credential already exists. Rotate it, or revoke it before issuing a replacement.");
+      }
+      const mount = safeAuthMount(vars.mount || "approle");
+      if (!mount) throw new Error("Invalid AppRole mount");
       const envs = resolveEnvs(vars.env);
       if (envs.length === 0) throw new Error("No environments matched this selection");
 
+      // Validate all scopes before creating any OpenBao resources.
+      const planned = envs.map((e) => ({
+        ident: envIdent(e),
+        ...credNames(app, envIdent(e), vars.level),
+        policyHcl: buildAccessPolicy({ envs: [e], level: vars.level, paths: vars.paths }),
+      }));
       await ensureApprole(mount, namespace);
+      for (const names of planned) await assertCredentialNamesAvailable(names, mount, namespace);
+      await save(vars.existing);
 
       const issued: IssuedCred[] = [];
       const roles: AppCredential["roles"] = [];
-      for (const e of envs) {
-        const ident = envIdent(e);
-        const { role, policy } = credNames(app, ident, vars.level);
-        const policyHcl = buildAccessPolicy({ envs: [e], level: vars.level, paths: vars.paths });
+      for (const { ident, role, policy, policyHcl } of planned) {
         await baoFetch({
           path: `sys/policies/acl/${policy}`,
           method: "POST",
@@ -170,7 +196,12 @@ export function useIssueAppCredential() {
         roles,
         createdAt: Date.now(),
       };
-      await save([...vars.existing.filter((c) => !sameCred(c, app, vars.env)), definition]);
+      try {
+        await save([...vars.existing, definition]);
+      } catch (err) {
+        await deleteCredentialResources(definition, namespace);
+        throw err;
+      }
       return { definition, issued };
     },
     onSuccess: () => {
@@ -197,6 +228,23 @@ export function useRotateSecretId() {
   });
 }
 
+export async function deleteCredentialResources(cred: AppCredential, namespace: string): Promise<void> {
+  const mount = safeAuthMount(cred.mount);
+  if (!mount) throw new Error("Invalid AppRole mount");
+  for (const r of cred.roles) {
+    const role = safeBaoName(r.role);
+    const policy = safeBaoName(r.policy);
+    if (!role || !policy) throw new Error("Invalid stored role or policy name");
+    for (const path of [`auth/${mount}/role/${role}`, `sys/policies/acl/${policy}`]) {
+      try {
+        await baoFetch({ path, method: "DELETE", namespace });
+      } catch (err) {
+        if (!(err instanceof BaoError && err.status === 404)) throw err;
+      }
+    }
+  }
+}
+
 /** Revoke: delete every per-env AppRole + policy, then drop the definition. */
 export function useRevokeAppCredential() {
   const qc = useQueryClient();
@@ -205,18 +253,7 @@ export function useRevokeAppCredential() {
   return useMutation({
     meta: { success: "App credential revoked", silentError: true },
     mutationFn: async (vars: { cred: AppCredential; existing: AppCredential[] }) => {
-      for (const r of vars.cred.roles) {
-        await baoFetch({
-          path: `auth/${stripSlash(vars.cred.mount)}/role/${r.role}`,
-          method: "DELETE",
-          namespace,
-        }).catch(() => {});
-        await baoFetch({
-          path: `sys/policies/acl/${r.policy}`,
-          method: "DELETE",
-          namespace,
-        }).catch(() => {});
-      }
+      await deleteCredentialResources(vars.cred, namespace);
       await save(vars.existing.filter((c) => !sameCred(c, vars.cred.app, vars.cred.env)));
     },
     onSuccess: () => {

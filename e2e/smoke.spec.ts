@@ -228,8 +228,8 @@ test("environments: customize a friendly display name", async ({ page }) => {
   await page.fill("#lbl-name", friendly);
   await page.getByRole("button", { name: "Save" }).click();
 
-  // the friendly name replaces the raw mount path as the card title
-  await expect(page.getByText(friendly)).toBeVisible();
+  // the friendly name replaces the raw mount path as the environment title
+  await expect(page.getByRole("link", { name: friendly })).toBeVisible();
 });
 
 test("settings: profile, preferences, namespaces", async ({ page }) => {
@@ -452,6 +452,12 @@ test("auth: Google sign-in wizard renders", async ({ page }) => {
   // the callback redirect URI the operator must register with Google is shown
   await expect(page.getByText("/ui2/api/auth/oidc/callback")).toBeVisible();
   await expect(page.getByText("Client ID")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Who can join" })).toBeVisible();
+  await expect(page.getByText("Only these email domains")).toBeVisible();
+  await expect(page.getByLabel("Add email domain")).toBeVisible();
+  await expect(page.getByLabel("Default role")).toBeVisible();
+  await page.getByRole("button", { name: "Different role by domain" }).click();
+  await expect(page.getByRole("button", { name: "Add domain" })).toBeVisible();
   // close without submitting (no external network needed)
   await page.getByRole("button", { name: "Cancel" }).click();
 });

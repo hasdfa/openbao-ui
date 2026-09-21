@@ -1,14 +1,14 @@
 "use client";
 
 import { LogOut } from "lucide-react";
-import { API_BASE } from "@/lib/base-path";
-import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
+import { API_BASE, BASE_PATH } from "@/lib/base-path";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 
 export function LogoutButton() {
-  const router = useRouter();
+  const client = useQueryClient();
   const [loading, setLoading] = useState(false);
 
   async function logout() {
@@ -21,8 +21,9 @@ export function LogoutButton() {
         setLoading(false);
         return;
       }
-      router.push("/login");
-      router.refresh();
+      await client.cancelQueries();
+      client.clear();
+      window.location.replace(`${BASE_PATH}/login`);
     } catch {
       setLoading(false);
     }

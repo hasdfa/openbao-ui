@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { API_BASE } from "@/lib/base-path";
+import { type OidcDomainRoles } from "@/lib/oidc-domains";
 
 // Client access to UI configuration (/ui2/api/ui-config). Phase 1 wires the
 // plumbing; Phase 2 (login customization) populates branding / default method.
@@ -29,6 +30,11 @@ export type UiConfig = {
   defaultLoginMethod?: string;
   hideTokenLogin?: boolean;
   loginMethodOrder?: string[];
+  /** Write-only from the Google wizard. GET strips the map and exposes
+   *  `oidcNeedsEmail` instead so the login page does not learn domain names. */
+  oidcDomainRoles?: OidcDomainRoles;
+  /** Derived: login should collect work email before starting OIDC. */
+  oidcNeedsEmail?: boolean;
   /** Read-only echo of the OPENBAO_UI_PUBLIC_URL env override, when set. Lets
    *  client-side OIDC setup register the same redirect origin the server uses. */
   publicUrl?: string;

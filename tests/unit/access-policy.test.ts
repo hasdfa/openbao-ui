@@ -52,21 +52,16 @@ describe("buildAccessPolicy", () => {
     expect(hcl).toContain('"sudo"');
   });
 
-  it("sanitizes unsafe characters so HCL can't be injected (keeps * glob)", () => {
-    const hcl = buildAccessPolicy({
-      envs: [{ mount: "prod" }],
-      level: "viewer",
-      // a malicious path trying to break out of the quoted string + add a block
-      paths: ['x" {\n  capabilities = ["sudo"]\n}\npath "secret/*'],
-    });
-    expect(hcl).not.toContain('"sudo"');
-    for (const m of hcl.matchAll(/path "([^"]*)"/g)) {
-      expect(m[1]).not.toContain('"');
-      expect(m[1]).not.toContain("\n");
-    }
-    // legitimate * glob survives
-    expect(buildAccessPolicy({ envs: [{ mount: "prod" }], level: "viewer", paths: ["a/*"] }))
-      .toContain('path "prod/data/a/*"');
+  it.each(["é", "\"", "", "   ", "foo?bar", "../other", "a//b"])("rejects invalid explicit path %j", (path) => {
+    expect(() => buildAccessPolicy({ envs: [{ mount: "prod" }], level: "viewer", paths: [path] })).toThrow();
+  });
+
+  it("rejects mixed valid and invalid paths instead of silently dropping one", () => {
+    expect(() => buildAccessPolicy({ envs: [{ mount: "prod" }], level: "viewer", paths: ["app/*", "é"] })).toThrow();
+  });
+
+  it.each([{ mount: "prod space" }, { mount: "" }, { mount: "secret", envPath: "é" }])("rejects altered environment identities", (env) => {
+    expect(() => buildAccessPolicy({ envs: [env], level: "viewer", paths: ["*"] })).toThrow();
   });
 
   it("de-duplicates and normalizes slashes", () => {

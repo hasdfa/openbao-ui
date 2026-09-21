@@ -1,7 +1,7 @@
 "use client";
 
 import { useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2 } from "lucide-react";
+import { CheckCircle2, Plus, Trash2, X } from "lucide-react";
 import * as React from "react";
 
 import { Button } from "@/components/ui/button";
@@ -9,19 +9,30 @@ import { Dialog, DialogHeader } from "@/components/ui/dialog";
 import { Disclosure } from "@/components/ui/disclosure";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useAccessRoles } from "@/lib/access-roles";
 import { baoFetch, BaoError } from "@/lib/bao-client";
 import { useNamespace } from "@/lib/namespace";
+import {
+  DEFAULT_POLICY,
+  addDomain,
+  displayTeamRole,
+  planGoogleOidcRoles,
+  safeAuthMount,
+  safeBaoName,
+  teamPolicyWrite,
+  type DomainRoleRow,
+} from "@/lib/oidc-domains";
+import { DEFAULT_ROLE_TEMPLATES } from "@/lib/role-defaults";
+import { useRoleTemplates } from "@/lib/roles";
 import { oidcCallbackUrl, useSetUiConfig, useUiConfig } from "@/lib/ui-config";
 
-// One-click-ish setup for "Sign in with Google" on top of OpenBao's native
-// OIDC method. Composes the primitives: enable the mount, write provider config
-// (Google discovery), create a default JIT role wired to this app's callback,
-// surface the method on the login page (listing_visibility=unauth), and record
-// it as the default login method in the UI config.
 const GOOGLE_DISCOVERY = "https://accounts.google.com";
 
 const errMsg = (e: unknown) =>
   e instanceof BaoError ? e.errors.join(", ") : e instanceof Error ? e.message : "Something went wrong";
+
+const selectClass =
+  "h-9 w-full rounded-md border bg-transparent px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 export function GoogleOidcWizard({
   onClose,
@@ -34,22 +45,33 @@ export function GoogleOidcWizard({
   const setUiConfig = useSetUiConfig();
   const uiConfig = useUiConfig();
   const qc = useQueryClient();
+  const templates = useRoleTemplates();
+  const accessRoles = useAccessRoles();
 
   const [clientId, setClientId] = React.useState("");
   const [clientSecret, setClientSecret] = React.useState("");
-  const [policies, setPolicies] = React.useState("default");
+  const [restrict, setRestrict] = React.useState(true);
+  const [domains, setDomains] = React.useState<string[]>([]);
+  const [defaultTeamRole, setDefaultTeamRole] = React.useState("viewer");
+  const [domainRoles, setDomainRoles] = React.useState<DomainRoleRow[]>([]);
   const [mount, setMount] = React.useState("oidc");
-  const [role, setRole] = React.useState("default");
-  const [groupsClaim, setGroupsClaim] = React.useState("");
+  const [oidcRoleName, setOidcRoleName] = React.useState("default");
   const [makeDefault, setMakeDefault] = React.useState(true);
 
   const [busy, setBusy] = React.useState(false);
   const [step, setStep] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [done, setDone] = React.useState(false);
+  const [doneSummary, setDoneSummary] = React.useState("");
 
-  // Prefer the OPENBAO_UI_PUBLIC_URL override (if configured) so the role's
-  // allowed_redirect_uris matches the redirect_uri the login route will send.
+  const knownRoles = React.useMemo(() => {
+    const names = new Set<string>();
+    for (const t of DEFAULT_ROLE_TEMPLATES) names.add(t.name);
+    for (const t of templates.data ?? []) names.add(t.name);
+    for (const r of accessRoles.data ?? []) names.add(r.name);
+    return [...names].sort();
+  }, [templates.data, accessRoles.data]);
+
   const redirectUri = oidcCallbackUrl(uiConfig.data?.publicUrl);
 
   async function submit(e: React.FormEvent) {
@@ -59,11 +81,30 @@ export function GoogleOidcWizard({
       setError("Client ID and secret are required");
       return;
     }
-    const m = mount.trim().replace(/\/$/, "") || "oidc";
-    const r = role.trim() || "default";
+    const m = safeAuthMount(mount);
+    if (!m) {
+      setError("Invalid auth mount path");
+      return;
+    }
+    let plan;
+    try {
+      plan = planGoogleOidcRoles({
+        oidcRoleName,
+        defaultTeamRole,
+        restrict,
+        allowedDomains: domains,
+        domainRoles,
+        redirectUri,
+      });
+    } catch (err) {
+      setError(errMsg(err));
+      return;
+    }
     setBusy(true);
     try {
-      // 1. enable the OIDC auth mount (ignore "already in use")
+      setStep("Checking permission to save login settings…");
+      await setUiConfig.mutateAsync({});
+
       setStep("Enabling the OIDC method…");
       try {
         await baoFetch({
@@ -78,8 +119,6 @@ export function GoogleOidcWizard({
         }
       }
 
-      // 2. provider config (Google discovery). OpenBao validates the discovery
-      //    URL here, so this step needs outbound access to accounts.google.com.
       setStep("Configuring the Google provider…");
       await baoFetch({
         path: `auth/${m}/config`,
@@ -89,30 +128,52 @@ export function GoogleOidcWizard({
           oidc_discovery_url: GOOGLE_DISCOVERY,
           oidc_client_id: clientId.trim(),
           oidc_client_secret: clientSecret.trim(),
-          default_role: r,
+          ...(plan.defaultOidcRole ? { default_role: plan.defaultOidcRole } : {}),
         },
       });
 
-      // 3. default JIT role — Google users authenticate into this role
-      setStep("Creating the default sign-in role…");
-      await baoFetch({
-        path: `auth/${m}/role/${r}`,
-        method: "POST",
-        namespace,
-        body: {
-          role_type: "oidc",
-          user_claim: "email",
-          oidc_scopes: ["openid", "email", "profile"],
-          allowed_redirect_uris: [redirectUri],
-          token_policies: policies
-            .split(",")
-            .map((p) => p.trim())
-            .filter(Boolean),
-          ...(groupsClaim.trim() ? { groups_claim: groupsClaim.trim() } : {}),
-        },
-      });
+      for (const planned of plan.roles) {
+        setStep(`Creating sign-in role ${planned.name}…`);
+        await baoFetch({
+          path: `auth/${m}/role/${planned.name}`,
+          method: "POST",
+          namespace,
+          body: planned.body,
+        });
+      }
 
-      // 4. surface it on the (unauthenticated) login page
+      const previous = uiConfig.data?.oidcDomainRoles;
+      if (previous && safeAuthMount(previous.mount) === m) {
+        const keep = new Set(plan.roles.map((r) => r.name));
+        const stale = [
+          ...(previous.roles ?? []).map((r) => r.role),
+          previous.fallbackRole,
+        ]
+          .map((name) => (name ? safeBaoName(name) : null))
+          .filter((name): name is string => !!name && !keep.has(name));
+        for (const name of stale) {
+          setStep(`Removing previous sign-in role ${name}…`);
+          try {
+            await baoFetch({
+              path: `auth/${m}/role/${name}`,
+              method: "DELETE",
+              namespace,
+            });
+          } catch (err) {
+            if (!(err instanceof BaoError && err.status === 404)) throw err;
+          }
+        }
+      }
+
+      for (const teamRole of plan.teamRolesToEnsure) {
+        setStep(`Ensuring Team role ${teamRole}…`);
+        await ensureTeamRole({
+          teamRole,
+          namespace,
+          templates: templates.data ?? DEFAULT_ROLE_TEMPLATES,
+        });
+      }
+
       setStep("Showing it on the login page…");
       await baoFetch({
         path: `sys/auth/${m}/tune`,
@@ -121,13 +182,20 @@ export function GoogleOidcWizard({
         body: { listing_visibility: "unauth", description: "Sign in with Google" },
       });
 
-      // 5. record it as the default method in the UI config
-      if (makeDefault) {
-        setStep("Saving UI preferences…");
-        await setUiConfig.mutateAsync({ defaultLoginMethod: m });
-      }
+      setStep("Saving UI preferences…");
+      await setUiConfig.mutateAsync({
+        ...(makeDefault ? { defaultLoginMethod: m } : {}),
+        oidcDomainRoles: {
+          mount: m,
+          roles: plan.domainRoutes,
+          fallbackRole: plan.fallbackRole,
+        },
+      });
 
       qc.invalidateQueries({ queryKey: ["auth-methods", namespace] });
+      qc.invalidateQueries({ queryKey: ["groups", namespace] });
+      qc.invalidateQueries({ queryKey: ["groups-detailed", namespace] });
+      setDoneSummary(summarizePlan(defaultTeamRole, restrict, domains, domainRoles));
       setStep(null);
       setDone(true);
     } catch (err) {
@@ -145,11 +213,7 @@ export function GoogleOidcWizard({
         <div className="flex flex-col gap-4">
           <div className="flex items-start gap-3 rounded-md border bg-emerald-500/10 p-3 text-sm">
             <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-emerald-600" />
-            <div>
-              Users can now choose <strong>Sign in with Google</strong> on the login
-              page. New users are provisioned automatically into the
-              <span className="font-mono"> {role || "default"}</span> role.
-            </div>
+            <div>{doneSummary}</div>
           </div>
           <div className="flex justify-end">
             <Button onClick={onDone}>Done</Button>
@@ -160,38 +224,156 @@ export function GoogleOidcWizard({
   }
 
   return (
-    <Dialog open onClose={onClose} className="max-w-lg">
-      <DialogHeader
-        title="Set up Google sign-in"
-        description="Create a Google OAuth client (Authorized redirect URI below), then paste its credentials here."
-        onClose={onClose}
-      />
-      <form className="flex flex-col gap-4" onSubmit={submit}>
+    <Dialog open onClose={onClose} className="max-h-[min(90dvh,calc(100dvh-2rem))] max-w-xl overflow-y-auto">
+      <div className="sticky -top-6 z-10 -mx-6 mb-4 border-b bg-card px-6 pb-4 pt-6">
+        <DialogHeader
+          title="Set up Google sign-in"
+          description="Paste the Google OAuth client, then choose who can join and which Team role they get."
+          onClose={onClose}
+        />
+      </div>
+      <form className="flex flex-col gap-5" onSubmit={submit}>
         <div className="flex items-center gap-2 rounded-md border bg-muted/40 p-2 text-xs">
           <span className="shrink-0 text-muted-foreground">Redirect URI</span>
           <code className="min-w-0 flex-1 truncate">{redirectUri}</code>
         </div>
 
-        <Field label="Client ID">
-          <Input value={clientId} onChange={(e) => setClientId(e.target.value)} className="font-mono" autoFocus />
-        </Field>
-        <Field label="Client secret">
-          <Input type="password" value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} className="font-mono" />
-        </Field>
-        <Field label="Default token policies (comma-separated)">
-          <Input value={policies} onChange={(e) => setPolicies(e.target.value)} className="font-mono" placeholder="default" />
-        </Field>
+        <section className="flex flex-col gap-3">
+          <h3 className="text-sm font-medium">Google app</h3>
+          <Field label="Client ID">
+            <Input value={clientId} onChange={(e) => setClientId(e.target.value)} className="font-mono" autoFocus />
+          </Field>
+          <Field label="Client secret">
+            <Input type="password" value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} className="font-mono" />
+          </Field>
+        </section>
+
+        <section className="flex flex-col gap-3">
+          <h3 className="text-sm font-medium">Who can join</h3>
+          <label className="flex items-start gap-2 text-sm">
+            <input
+              type="radio"
+              name="who"
+              className="mt-1"
+              checked={!restrict}
+              disabled={domainRoles.some((r) => r.domain.trim())}
+              onChange={() => setRestrict(false)}
+            />
+            <span>
+              Anyone with a Google account
+              <span className="mt-0.5 block text-xs text-muted-foreground">
+                Includes personal Gmail.
+              </span>
+            </span>
+          </label>
+          <label className="flex items-start gap-2 text-sm">
+            <input
+              type="radio"
+              name="who"
+              className="mt-1"
+              checked={restrict}
+              onChange={() => setRestrict(true)}
+            />
+            <span>
+              Only these email domains
+              <span className="mt-0.5 block text-xs text-muted-foreground">
+                Unknown domains are rejected.
+              </span>
+            </span>
+          </label>
+          {restrict ? (
+            <DomainChips
+              domains={domains}
+              onChange={setDomains}
+              onError={setError}
+            />
+          ) : null}
+        </section>
+
+        <section className="flex flex-col gap-3">
+          <h3 className="text-sm font-medium">When they join</h3>
+          <Field
+            label="Default role"
+            htmlFor="google-default-role"
+            hint="Granted on every Google sign-in. You can still change it later on Team."
+          >
+            <RoleSelect
+              value={defaultTeamRole}
+              roles={knownRoles}
+              onChange={setDefaultTeamRole}
+              id="google-default-role"
+            />
+          </Field>
+
+          <Disclosure label="Different role by domain" count={domainRoles.length || undefined}>
+            <div className="flex flex-col gap-3">
+              <p className="text-xs text-muted-foreground">
+                People from a domain get this role instead of the default.
+              </p>
+              {domainRoles.map((row, i) => (
+                <div key={i} className="flex flex-col gap-2 rounded-md border p-2 sm:flex-row sm:items-end">
+                  <div className="min-w-0 flex-1">
+                    <Label htmlFor={`oidc-domain-${i}`}>Domain</Label>
+                    <Input
+                      id={`oidc-domain-${i}`}
+                      value={row.domain}
+                      onChange={(e) =>
+                        setDomainRoles((rows) =>
+                          rows.map((r, j) => (j === i ? { ...r, domain: e.target.value } : r)),
+                        )
+                      }
+                      className="font-mono"
+                      placeholder="acme.com"
+                    />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <Label htmlFor={`oidc-role-${i}`}>Role</Label>
+                    <RoleSelect
+                      id={`oidc-role-${i}`}
+                      value={row.teamRole}
+                      roles={knownRoles}
+                      onChange={(teamRole) =>
+                        setDomainRoles((rows) =>
+                          rows.map((r, j) => (j === i ? { ...r, teamRole } : r)),
+                        )
+                      }
+                    />
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="size-11 shrink-0 md:size-9"
+                    aria-label={`Remove ${row.domain || `domain ${i + 1}`}`}
+                    onClick={() => setDomainRoles((rows) => rows.filter((_, j) => j !== i))}
+                  >
+                    <Trash2 />
+                  </Button>
+                </div>
+              ))}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="self-start"
+                onClick={() => {
+                  setRestrict(true);
+                  setDomainRoles((rows) => [...rows, { domain: "", teamRole: defaultTeamRole }]);
+                }}
+              >
+                <Plus /> Add domain
+              </Button>
+            </div>
+          </Disclosure>
+        </section>
 
         <Disclosure label="Advanced">
           <div className="flex flex-col gap-3">
             <Field label="Mount path">
               <Input value={mount} onChange={(e) => setMount(e.target.value)} className="font-mono" />
             </Field>
-            <Field label="Role name">
-              <Input value={role} onChange={(e) => setRole(e.target.value)} className="font-mono" />
-            </Field>
-            <Field label="Groups claim (optional)">
-              <Input value={groupsClaim} onChange={(e) => setGroupsClaim(e.target.value)} className="font-mono" placeholder="groups" />
+            <Field label="OIDC role name">
+              <Input value={oidcRoleName} onChange={(e) => setOidcRoleName(e.target.value)} className="font-mono" />
             </Field>
           </div>
         </Disclosure>
@@ -204,7 +386,7 @@ export function GoogleOidcWizard({
         {step ? <p className="text-sm text-muted-foreground">{step}</p> : null}
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
-        <div className="flex justify-end gap-2 border-t pt-4">
+        <div className="sticky -bottom-6 -mx-6 mt-2 flex justify-end gap-2 border-t bg-card px-6 py-4">
           <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
             Cancel
           </Button>
@@ -217,11 +399,171 @@ export function GoogleOidcWizard({
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function RoleSelect({
+  id,
+  value,
+  roles,
+  onChange,
+}: {
+  id?: string;
+  value: string;
+  roles: string[];
+  onChange: (value: string) => void;
+}) {
+  return (
+    <select id={id} value={value} onChange={(e) => onChange(e.target.value)} className={selectClass}>
+      <option value={DEFAULT_POLICY}>No extra role (default policy)</option>
+      {roles.map((name) => (
+        <option key={name} value={name}>
+          {name}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+function DomainChips({
+  domains,
+  onChange,
+  onError,
+}: {
+  domains: string[];
+  onChange: (next: string[]) => void;
+  onError: (msg: string | null) => void;
+}) {
+  const [draft, setDraft] = React.useState("");
+
+  function commit(raw: string) {
+    const value = raw.trim();
+    if (!value) return;
+    try {
+      onChange(value.split(/[,\s]+/).reduce((list, part) => addDomain(list, part), domains));
+      setDraft("");
+      onError(null);
+    } catch (e) {
+      onError(e instanceof Error ? e.message : "Invalid domain");
+    }
+  }
+
   return (
     <div className="flex flex-col gap-2">
-      <Label>{label}</Label>
-      {children}
+      <div className="flex min-h-11 flex-wrap items-center gap-1.5 rounded-md border bg-transparent px-2 py-1.5">
+        {domains.map((domain) => (
+          <span
+            key={domain}
+            className="inline-flex items-center gap-1 rounded-md border bg-card px-2 py-0.5 font-mono text-xs"
+          >
+            {domain}
+            <button
+              type="button"
+              aria-label={`Remove ${domain}`}
+              className="text-muted-foreground hover:text-foreground"
+              onClick={() => onChange(domains.filter((d) => d !== domain))}
+            >
+              <X className="size-3.5" />
+            </button>
+          </span>
+        ))}
+        <input
+          aria-label="Add email domain"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === ",") {
+              e.preventDefault();
+              commit(draft);
+            }
+            if (e.key === "Backspace" && !draft && domains.length) {
+              onChange(domains.slice(0, -1));
+            }
+          }}
+          onBlur={() => commit(draft)}
+          placeholder={domains.length ? "Add another…" : "acme.com"}
+          className="min-w-[8rem] flex-1 bg-transparent py-1 font-mono text-sm outline-none placeholder:text-muted-foreground"
+        />
+      </div>
+      <p className="text-xs text-muted-foreground">Type a domain and press Enter.</p>
     </div>
   );
+}
+
+function Field({
+  label,
+  htmlFor,
+  hint,
+  children,
+}: {
+  label: string;
+  htmlFor?: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      <Label htmlFor={htmlFor}>{label}</Label>
+      {children}
+      {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
+    </div>
+  );
+}
+
+function summarizePlan(
+  defaultTeamRole: string,
+  restrict: boolean,
+  domains: string[],
+  domainRoles: DomainRoleRow[],
+): string {
+  const who = restrict
+    ? `Only ${domains.length ? domains.join(", ") : "the domains you listed"} can join.`
+    : "Anyone with a Google account can join.";
+  const def =
+    defaultTeamRole === DEFAULT_POLICY
+      ? "They get the default policy."
+      : `They get the ${displayTeamRole(defaultTeamRole)} role.`;
+  const extras = domainRoles
+    .filter((r) => r.domain.trim())
+    .map((r) => `${r.domain.trim()} → ${displayTeamRole(r.teamRole)}`)
+    .join("; ");
+  return extras ? `${who} ${def} Exceptions: ${extras}.` : `${who} ${def}`;
+}
+
+async function ensureTeamRole({
+  teamRole,
+  namespace,
+  templates,
+}: {
+  teamRole: string;
+  namespace: string;
+  templates: { name: string; policy: string }[];
+}) {
+  const tpl = templates.find((t) => t.name === teamRole);
+  let exists = false;
+  try {
+    await baoFetch({ path: `sys/policies/acl/${encodeURIComponent(teamRole)}`, namespace });
+    exists = true;
+  } catch (err) {
+    if (!(err instanceof BaoError && err.status === 404)) throw err;
+  }
+  const action = teamPolicyWrite(exists, !!tpl);
+  if (action === "missing") {
+    throw new Error(`Team role "${teamRole}" has no policy. Create it on Team first.`);
+  }
+  if (action === "create" && tpl) {
+    await baoFetch({
+      path: `sys/policies/acl/${tpl.name}`,
+      method: "POST",
+      namespace,
+      body: { policy: tpl.policy },
+    });
+  }
+  try {
+    await baoFetch({
+      path: "identity/group",
+      method: "POST",
+      namespace,
+      body: { name: teamRole, type: "internal", policies: [teamRole] },
+    });
+  } catch (err) {
+    if (!(err instanceof BaoError && /already exists/i.test(err.errors.join(" ")))) throw err;
+  }
 }

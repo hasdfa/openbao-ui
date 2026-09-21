@@ -38,7 +38,7 @@ export function NewAppDialog({ onClose }: { onClose: () => void }) {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    if (!/^[a-zA-Z0-9_.-]+$/.test(cleanApp)) {
+    if (!/^[a-zA-Z0-9_][a-zA-Z0-9_.-]*$/.test(cleanApp) || cleanApp === "." || cleanApp === "..") {
       setError("App name is required (letters, numbers, _ . -)");
       return;
     }
@@ -96,10 +96,11 @@ export function NewAppDialog({ onClose }: { onClose: () => void }) {
                 >
                   <input
                     type="checkbox"
+                    disabled={!m.v2}
                     checked={seed.includes(m.mount)}
                     onChange={() => setSeed((s) => (s.includes(m.mount) ? s.filter((x) => x !== m.mount) : [...s, m.mount]))}
                   />
-                  {envName(m.mount)}
+                  {envName(m.mount)}{!m.v2 ? " (KV v1: register only)" : ""}
                 </label>
               ))}
             </div>

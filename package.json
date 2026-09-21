@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
     "mock:bao": "node scripts/mock-openbao.mjs",
     "e2e": "playwright test",
     "test": "vitest run"

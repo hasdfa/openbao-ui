@@ -3,13 +3,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { isCrossSiteRequest } from "@/lib/csrf";
 import { getConfig, setConfig } from "@/lib/db";
 import { DEFAULT_ROLE_TEMPLATES, type RoleTemplate } from "@/lib/role-defaults";
-import { getToken } from "@/lib/session";
+import { authorizeMetadata } from "@/lib/metadata-auth";
 import { isOperator } from "@/lib/ui-admin";
 
 /**
  * Role-template catalog (the Team view's standard roles), per namespace. The
- * namespace is always taken from the caller's `X-Vault-Namespace` header (never
- * a query/body param), so it can't be spoofed to read/write another namespace.
+ * namespace is taken from the header and authorized against OpenBao before
+ * accessing the local metadata store.
  *   GET /ui2/api/role-templates  — authenticated; seeded with the built-in
  *       defaults until an operator customizes them.
  *   PUT /ui2/api/role-templates  — operator only; saves the list.
@@ -22,20 +22,17 @@ export const dynamic = "force-dynamic";
 const key = (ns: string) => `role-templates::${ns}`;
 
 export async function GET(req: NextRequest) {
-  const token = await getToken();
-  if (!token) {
-    return NextResponse.json({ errors: ["not authenticated"] }, { status: 401 });
-  }
-  const ns = req.headers.get("x-vault-namespace") ?? "";
+  const auth = await authorizeMetadata(req);
+  if (auth.error) return auth.error;
+  const { namespace: ns } = auth;
   const stored = getConfig<RoleTemplate[]>(key(ns));
   return NextResponse.json({ templates: stored ?? DEFAULT_ROLE_TEMPLATES });
 }
 
 export async function PUT(req: NextRequest) {
-  const token = await getToken();
-  if (!token) {
-    return NextResponse.json({ errors: ["not authenticated"] }, { status: 401 });
-  }
+  const auth = await authorizeMetadata(req);
+  if (auth.error) return auth.error;
+  const { namespace: ns } = auth;
   if (isCrossSiteRequest(req)) {
     return NextResponse.json(
       { errors: ["cross-site request blocked"] },
@@ -44,8 +41,7 @@ export async function PUT(req: NextRequest) {
   }
   // Namespace comes from the caller's header and gates the operator check, so
   // templates can only be written for a namespace the caller administers.
-  const ns = req.headers.get("x-vault-namespace") ?? "";
-  if (!(await isOperator(token, ns))) {
+  if (!(await isOperator(auth.token, ns))) {
     return NextResponse.json(
       { errors: ["forbidden: requires mount-management capability"] },
       { status: 403 },

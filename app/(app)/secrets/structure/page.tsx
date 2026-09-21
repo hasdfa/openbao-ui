@@ -129,7 +129,7 @@ export default function StructurePage() {
       </div>
 
       {!mounts.isLoading && !mounts.isError ? (
-        <StructureTree envs={envs} show={show} />
+        <StructureTree key={namespace} envs={envs} show={show} />
       ) : null}
     </div>
   );

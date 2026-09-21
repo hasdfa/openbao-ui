@@ -1,7 +1,8 @@
 "use client";
 
 import { LogIn } from "lucide-react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
+import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
 
 import { Logo } from "@/components/logo";
@@ -17,7 +18,8 @@ import {
 import { Disclosure } from "@/components/ui/disclosure";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { API_BASE } from "@/lib/base-path";
+import { API_BASE, BASE_PATH } from "@/lib/base-path";
+
 
 const LOGIN_ENDPOINT = `${API_BASE}/auth/login`;
 const OIDC_START = `${API_BASE}/auth/oidc/start`;
@@ -41,6 +43,7 @@ type Branding = {
 type UiConfig = {
   branding?: Branding;
   defaultLoginMethod?: string;
+  oidcNeedsEmail?: boolean;
 };
 
 export default function LoginPage() {
@@ -53,12 +56,20 @@ export default function LoginPage() {
   );
 }
 
-async function startOidc(mount: string): Promise<{ authUrl?: string; error?: string }> {
+async function startOidc(
+  mount: string,
+  opts: { role?: string; hd?: string; email?: string } = {},
+): Promise<{ authUrl?: string; error?: string }> {
   try {
     const res = await fetch(OIDC_START, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mount: mount || undefined }),
+      body: JSON.stringify({
+        mount: mount || undefined,
+        role: opts.role || undefined,
+        hd: opts.hd || undefined,
+        email: opts.email || undefined,
+      }),
     });
     const data = await res.json();
     if (!res.ok) return { error: data.error ?? "OIDC start failed" };
@@ -69,7 +80,7 @@ async function startOidc(mount: string): Promise<{ authUrl?: string; error?: str
 }
 
 function LoginForm() {
-  const router = useRouter();
+  const client = useQueryClient();
   const search = useSearchParams();
   const [method, setMethod] = useState("token");
   const [f, setF] = useState({
@@ -83,6 +94,8 @@ function LoginForm() {
   });
   const [error, setError] = useState<string | null>(search.get("error") || null);
   const [loading, setLoading] = useState(false);
+  const [pendingOidc, setPendingOidc] = useState<{ mount: string } | null>(null);
+  const [workEmail, setWorkEmail] = useState("");
 
   // Login customization: discovered (unauth) methods + branding/default.
   const [discovered, setDiscovered] = useState<DiscoveredMethod[]>([]);
@@ -128,16 +141,38 @@ function LoginForm() {
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setF((s) => ({ ...s, [k]: e.target.value }));
 
-  async function oidcButton(mount: string) {
-    setError(null);
+  async function redirectOidc(
+    mount: string,
+    opts: { role?: string; hd?: string; email?: string } = {},
+  ) {
     setLoading(true);
-    const { authUrl, error } = await startOidc(mount);
-    if (error || !authUrl) {
-      setError(error ?? "OpenBao returned no sign-in URL — check the OIDC role's allowed_redirect_uris.");
+    const { authUrl, error: startError } = await startOidc(mount, opts);
+    if (startError || !authUrl) {
+      setError(
+        startError ??
+          "OpenBao returned no sign-in URL — check the OIDC role's allowed_redirect_uris.",
+      );
       setLoading(false);
       return;
     }
     window.location.href = authUrl;
+  }
+
+  function oidcButton(mount: string) {
+    setError(null);
+    if (cfg.oidcNeedsEmail) {
+      setPendingOidc({ mount });
+      setWorkEmail("");
+      return;
+    }
+    void redirectOidc(mount);
+  }
+
+  function submitWorkEmail(e: React.FormEvent) {
+    e.preventDefault();
+    if (!pendingOidc) return;
+    setError(null);
+    void redirectOidc(pendingOidc.mount, { email: workEmail });
   }
 
   async function submit(e: React.FormEvent) {
@@ -176,8 +211,9 @@ function LoginForm() {
         setError(data.error ?? "Login failed");
         return;
       }
-      router.push("/");
-      router.refresh();
+      await client.cancelQueries();
+      client.clear();
+      window.location.replace(BASE_PATH);
     } catch {
       setError("Network error — is OpenBao reachable?");
     } finally {
@@ -281,7 +317,39 @@ function LoginForm() {
         <CardContent>
           {error ? <p className="mb-4 text-sm text-destructive">{error}</p> : null}
 
-          {hasPrimary ? (
+          {pendingOidc ? (
+            <form onSubmit={submitWorkEmail} className="flex flex-col gap-4">
+              <Field label="Work email" htmlFor="work-email">
+                <Input
+                  id="work-email"
+                  type="email"
+                  autoComplete="username"
+                  autoFocus
+                  value={workEmail}
+                  onChange={(e) => setWorkEmail(e.target.value)}
+                  placeholder="you@acme.com"
+                />
+              </Field>
+              <p className="text-xs text-muted-foreground">
+                Used to pick the role for your domain. OpenBao still checks the
+                Google account that signs in.
+              </p>
+              <Button type="submit" disabled={loading || !workEmail.trim()}>
+                {loading ? "Signing in…" : "Continue with Google"}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={loading}
+                onClick={() => {
+                  setPendingOidc(null);
+                  setError(null);
+                }}
+              >
+                Back
+              </Button>
+            </form>
+          ) : hasPrimary ? (
             <div className="flex flex-col gap-4">
               <div className="flex flex-col gap-2">
                 {oidcMethods.map((m) => (
@@ -309,10 +377,18 @@ function LoginForm() {
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label,
+  htmlFor,
+  children,
+}: {
+  label: string;
+  htmlFor?: string;
+  children: React.ReactNode;
+}) {
   return (
     <div className="flex flex-col gap-2">
-      <Label>{label}</Label>
+      <Label htmlFor={htmlFor}>{label}</Label>
       {children}
     </div>
   );

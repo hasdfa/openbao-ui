@@ -2,6 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { isCrossSiteRequest } from "@/lib/csrf";
 import { getConfig, setConfig } from "@/lib/db";
+import {
+  googleLoginHint,
+  normalizeDomain,
+  safeAuthMount,
+  safeBaoName,
+  type OidcDomainRoles,
+} from "@/lib/oidc-domains";
 import { configuredOrigin } from "@/lib/request-origin";
 import { getToken } from "@/lib/session";
 import { isOperator } from "@/lib/ui-admin";
@@ -22,6 +29,33 @@ import { isOperator } from "@/lib/ui-admin";
  * branding/default-method/ordering on top of it.
  */
 export const dynamic = "force-dynamic";
+
+function parseOidcDomainRoles(
+  raw: unknown,
+): { spec: OidcDomainRoles } | { error: string } {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return { error: "oidcDomainRoles must be an object" };
+  }
+  const value = raw as Record<string, unknown>;
+  const mount = safeAuthMount(typeof value.mount === "string" ? value.mount : "");
+  if (!mount) return { error: "oidcDomainRoles.mount is invalid" };
+  const rolesIn = Array.isArray(value.roles) ? value.roles : null;
+  if (!rolesIn) return { error: "oidcDomainRoles.roles must be an array" };
+  const roles: OidcDomainRoles["roles"] = [];
+  for (const row of rolesIn) {
+    if (!row || typeof row !== "object" || Array.isArray(row)) {
+      return { error: "oidcDomainRoles.roles entries must be objects" };
+    }
+    const rec = row as Record<string, unknown>;
+    const domain = typeof rec.domain === "string" ? normalizeDomain(rec.domain) : null;
+    const role = typeof rec.role === "string" ? safeBaoName(rec.role) : null;
+    if (!domain || !role) return { error: "oidcDomainRoles.roles need a domain and role" };
+    roles.push({ domain, role });
+  }
+  const fallbackRole =
+    typeof value.fallbackRole === "string" ? safeBaoName(value.fallbackRole) ?? undefined : undefined;
+  return { spec: { mount, roles, fallbackRole } };
+}
 
 const CONFIG_KEY = "ui";
 
@@ -47,6 +81,10 @@ export async function GET() {
   // origin. Env-derived and read-only; not persisted via PUT.
   const publicUrl = configuredOrigin();
   if (publicUrl) pub.publicUrl = publicUrl;
+  const spec = cfg.oidcDomainRoles as OidcDomainRoles | undefined;
+  if (spec) {
+    pub.oidcNeedsEmail = googleLoginHint(spec.roles ?? [], spec.fallbackRole).askEmail;
+  }
   return NextResponse.json({ config: pub });
 }
 
@@ -81,6 +119,14 @@ export async function PUT(req: NextRequest) {
       { errors: ["body must be a JSON object"] },
       { status: 400 },
     );
+  }
+
+  if ("oidcDomainRoles" in body && body.oidcDomainRoles != null) {
+    const parsed = parseOidcDomainRoles(body.oidcDomainRoles);
+    if ("error" in parsed) {
+      return NextResponse.json({ errors: [parsed.error] }, { status: 400 });
+    }
+    body.oidcDomainRoles = parsed.spec;
   }
 
   const current = (getConfig<UiConfig>(CONFIG_KEY) ?? {}) as UiConfig;

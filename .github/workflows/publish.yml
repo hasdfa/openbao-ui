@@ -11,7 +11,7 @@ name: Publish image
 # a new OpenBao version is released).
 #
 # The app is built on the runner and packaged via docker/Dockerfile.runtime —
-# the exact artifact path CI's e2e job exercises — so we ship what we test.
+# The candidate image is tested locally, then that same image is tagged/pushed.
 on:
   push:
     branches: [main]
@@ -46,7 +46,7 @@ env:
 
 jobs:
   publish:
-    name: Build & push (ghcr.io)
+    name: Validate, test image & push (ghcr.io)
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -64,9 +64,11 @@ jobs:
       # on default-branch pushes or when explicitly requested.
       - name: Resolve OpenBao version & image tags
         id: meta
+        env:
+          TARGET_OPENBAO_VERSION: ${{ inputs.openbao_version }}
         run: |
           set -euo pipefail
-          version="${{ inputs.openbao_version }}"
+          version="$TARGET_OPENBAO_VERSION"
           if [ -z "$version" ]; then version="$(tr -d '[:space:]' < .openbao-version)"; fi
           if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
             echo "::error::Invalid OpenBao version '$version' (expected MAJOR.MINOR.PATCH)"; exit 1
@@ -93,6 +95,9 @@ jobs:
           echo "Publishing OpenBao ${version} as:"; printf '  %s\n' ${tags//,/ }
 
       - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
       - name: Build app
         run: pnpm build
         env:
@@ -108,22 +113,17 @@ jobs:
 
       - uses: docker/setup-buildx-action@v3
 
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build & push
+      - name: Build candidate image
+        id: candidate
         uses: docker/build-push-action@v6
         with:
           context: ci-ctx
           file: docker/Dockerfile.runtime
-          push: true
+          load: true
+          push: false
+          tags: openbao-ui:candidate
           build-args: |
             OPENBAO_VERSION=${{ steps.meta.outputs.version }}
-          tags: ${{ steps.meta.outputs.tags }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
@@ -132,3 +132,59 @@ jobs:
           provenance: false
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Start candidate image
+        env:
+          CANDIDATE_IMAGE: ${{ steps.candidate.outputs.imageid }}
+        run: |
+          docker run -d --name openbao-ui --init -p 3000:3000 \
+            -e BAO_DEV=1 -e BAO_DEV_ROOT_TOKEN_ID=root "$CANDIDATE_IMAGE"
+          for i in $(seq 1 60); do
+            if [ "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/ui2/login)" = "200" ]; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::candidate did not become ready"
+          exit 1
+
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: Test candidate against embedded OpenBao
+        env:
+          E2E_BASE_URL: http://localhost:3000
+          E2E_TOKEN: root
+        run: pnpm e2e
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push the tested image
+        env:
+          CANDIDATE_IMAGE: ${{ steps.candidate.outputs.imageid }}
+          IMAGE_TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          IFS=',' read -ra tags <<< "$IMAGE_TAGS"
+          for tag in "${tags[@]}"; do
+            docker tag "$CANDIDATE_IMAGE" "$tag"
+            docker push "$tag"
+          done
+
+      - name: Container logs on failure
+        if: failure()
+        run: docker logs openbao-ui || true
+
+      - name: Upload test artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: publish-playwright-results
+          path: test-results/
+          retention-days: 7
+
+      - name: Stop candidate
+        if: always()
+        run: docker rm -f openbao-ui || true

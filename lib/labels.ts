@@ -98,11 +98,15 @@ export function useClearLabel(ns?: string) {
   return useMutation({
     meta: { silentError: true },
     mutationFn: async (input: { scope: LabelScope; ref: string }) => {
-      await fetch(`${API_BASE}/labels`, {
+      const res = await fetch(`${API_BASE}/labels`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", "x-vault-namespace": target },
         body: JSON.stringify({ namespace: target, scope: input.scope, ref: input.ref }),
       });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { errors?: string[] };
+        throw new Error(data.errors?.[0] ?? `Request failed (${res.status})`);
+      }
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["ui-labels", target] }),
   });

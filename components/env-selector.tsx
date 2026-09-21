@@ -34,7 +34,7 @@ export function EnvScopePicker({
   const { data: labels } = useLabels();
 
   const kvMounts = Object.entries(mounts ?? {})
-    .filter(([, v]) => v.type === "kv" || v.type === "generic")
+    .filter(([, v]) => (v.type === "kv" || v.type === "generic") && v.options?.version === "2")
     .map(([p]) => p.replace(/\/$/, ""));
   const envName = (m: string) => labels?.[labelKey("environment", `${m}/`)]?.label || m;
 

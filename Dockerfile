@@ -12,10 +12,10 @@
 # OPENBAO_VERSION in sync with the repo's `.openbao-version` pin — CI passes it
 # explicitly (`--build-arg OPENBAO_VERSION=$(cat .openbao-version)`); this
 # default is just the fallback for ad-hoc local builds.
-#   docker build --build-arg OPENBAO_VERSION=2.5.5 .
+#   docker build --build-arg OPENBAO_VERSION=2.6.2 .
 # Or override the whole ref to pin a digest:
 #   docker build --build-arg OPENBAO_IMAGE=quay.io/openbao/openbao@sha256:… .
-ARG OPENBAO_VERSION=2.5.5
+ARG OPENBAO_VERSION=2.6.2
 ARG OPENBAO_IMAGE=quay.io/openbao/openbao:${OPENBAO_VERSION}
 FROM ${OPENBAO_IMAGE} AS openbao
 
@@ -52,7 +52,7 @@ ENV HOSTNAME=0.0.0.0
 # `init: true`). Keeps the image lean and free of build-time network deps.
 
 # Pull the `bao` binary from the OpenBao image stage (see OPENBAO_IMAGE above).
-COPY --from=openbao /bin/bao /usr/local/bin/bao
+COPY --from=openbao /usr/bin/bao /usr/local/bin/bao
 
 # Next.js standalone server + static assets.
 COPY --from=builder /app/.next/standalone ./

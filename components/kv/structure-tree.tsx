@@ -5,10 +5,15 @@ import { useQueryClient } from "@tanstack/react-query";
 import * as React from "react";
 
 import { ColorDot } from "@/components/label-editor";
-import { EditorHandle, KvKeyValueEditor } from "@/components/kv/kv-fields";
+import {
+  EditorHandle,
+  KvKeyValueEditor,
+  snapshotKvDraft,
+} from "@/components/kv/kv-fields";
 import { Button } from "@/components/ui/button";
 import { BaoError } from "@/lib/bao-client";
 import { useKvList, useKvSecret, useKvWrite } from "@/lib/kv";
+import { useNamespace } from "@/lib/namespace";
 import { cn } from "@/lib/utils";
 
 /** One environment = one KV/generic mount, with display metadata. */
@@ -683,11 +688,22 @@ function EnvEditor({
   version?: number;
   onClose: () => void;
 }) {
+  const { namespace } = useNamespace();
   const write = useKvWrite(env.mount, path);
   const [error, setError] = React.useState<string | null>(null);
   const editorRef = React.useRef<EditorHandle>(null);
+  const [snapshot] = React.useState(() => ({
+    ...snapshotKvDraft(initial, version),
+    present,
+    namespace,
+  }));
+
+  React.useEffect(() => {
+    if (namespace !== snapshot.namespace) onClose();
+  }, [namespace, snapshot.namespace, onClose]);
 
   async function save() {
+    if (namespace !== snapshot.namespace) return;
     setError(null);
     let payload: Record<string, unknown>;
     try {
@@ -697,8 +713,16 @@ function EnvEditor({
       return;
     }
     try {
-      // existing secret → CAS on current version; create → cas:0 (v1 ignores it)
-      await write.mutateAsync({ data: payload, cas: present ? version : 0 });
+      // existing secret → CAS on the version captured when editing started;
+      // create → cas:0 (v1 ignores it). Refuse a v2 overwrite without CAS.
+      if (snapshot.present && snapshot.cas == null) {
+        setError("Cannot save without a known current version. Reload and try again.");
+        return;
+      }
+      await write.mutateAsync({
+        data: payload,
+        cas: snapshot.present ? snapshot.cas : 0,
+      });
       onClose();
     } catch (e) {
       setError(errMsg(e));
@@ -709,14 +733,18 @@ function EnvEditor({
     <div className="mt-3 rounded-lg border bg-card p-3">
       <div className="mb-2 flex items-center gap-2 text-sm font-medium">
         <ColorDot color={env.color} className="size-2.5 shrink-0" />
-        {present ? "Edit in" : "Create in"} {env.name}
+        {snapshot.present ? "Edit in" : "Create in"} {env.name}
         <span className="font-mono text-xs font-normal text-muted-foreground">{path}</span>
       </div>
       {error ? <p className="mb-2 text-xs text-destructive">{error}</p> : null}
-      <KvKeyValueEditor ref={editorRef} initial={initial} />
+      <KvKeyValueEditor
+        key={`${namespace}:${env.mount}:${path}`}
+        ref={editorRef}
+        initial={snapshot.data}
+      />
       <div className="mt-3 flex gap-2">
         <Button size="sm" onClick={save} disabled={write.isPending}>
-          {write.isPending ? "Saving…" : present ? "Save new version" : "Create"}
+          {write.isPending ? "Saving…" : snapshot.present ? "Save new version" : "Create"}
         </Button>
         <Button size="sm" variant="outline" onClick={onClose}>
           Cancel

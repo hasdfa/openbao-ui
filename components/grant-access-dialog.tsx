@@ -49,7 +49,13 @@ export function GrantAccessDialog({
     paths,
   };
 
-  const preview = React.useMemo(() => previewPolicy(role), [JSON.stringify(role)]);
+  let preview = "";
+  let previewError: string | null = null;
+  try {
+    preview = previewPolicy(role);
+  } catch (err) {
+    previewError = err instanceof Error ? err.message : "Invalid policy scope";
+  }
   const targets = resolveEnvs(env);
 
   async function submit(e: React.FormEvent) {
@@ -108,10 +114,10 @@ export function GrantAccessDialog({
           </pre>
         </div>
 
-        {error ? <p className="text-sm text-destructive">{error}</p> : null}
+        {error || previewError ? <p className="text-sm text-destructive">{error || previewError}</p> : null}
         <div className="flex justify-end gap-2 border-t pt-4">
           <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-          <Button type="submit" disabled={apply.isPending}>
+          <Button type="submit" disabled={apply.isPending || !!previewError}>
             {apply.isPending ? "Applying…" : initial ? "Save & re-sync" : "Grant access"}
           </Button>
         </div>

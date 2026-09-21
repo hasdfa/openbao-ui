@@ -56,7 +56,7 @@ export default function AppCredentialsPage() {
                 <Button variant="ghost" size="sm" title="Generate a fresh secret_id" onClick={() => setRotating(c)}>
                   <RefreshCw /> Rotate
                 </Button>
-                <Button variant="ghost" size="icon" title="Revoke" onClick={() => setRevoking(c)}>
+                <Button variant="ghost" size="icon" title="Revoke" onClick={() => { revoke.reset(); setRevoking(c); }}>
                   <Trash2 />
                 </Button>
               </div>
@@ -81,13 +81,18 @@ export default function AppCredentialsPage() {
         onClose={() => setRevoking(null)}
         onConfirm={async () => {
           if (!revoking) return;
-          await revoke.mutateAsync({ cred: revoking, existing: list });
-          setRevoking(null);
+          try {
+            await revoke.mutateAsync({ cred: revoking, existing: list });
+            setRevoking(null);
+          } catch {
+            // Keep the dialog and definition available for retry; show the error below.
+          }
         }}
         title="Revoke app credential"
         description={`Deletes the ${revoking?.roles.length ?? 0} AppRole(s) + policies for "${revoking?.app}". Any service still using them will stop receiving tokens.`}
         confirmLabel="Revoke"
         pending={revoke.isPending}
+        error={revoke.error instanceof Error ? revoke.error.message : null}
       />
     </div>
   );

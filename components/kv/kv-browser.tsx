@@ -35,6 +35,26 @@ export function KvBrowser({
   mount: string;
   segments: string[];
 }) {
+  const { namespace } = useNamespace();
+  return (
+    <ScopedKvBrowser
+      key={`${namespace}:${mount}:${segments.join("/")}`}
+      namespace={namespace}
+      mount={mount}
+      segments={segments}
+    />
+  );
+}
+
+function ScopedKvBrowser({
+  namespace,
+  mount,
+  segments,
+}: {
+  namespace: string;
+  mount: string;
+  segments: string[];
+}) {
   const fullPath = segments.join("/");
 
   // The URL path is normally a folder. But a deep link (or pasted URL) can point
@@ -149,6 +169,7 @@ export function KvBrowser({
         <div className="min-w-0 flex-1">
           {selected ? (
             <SecretDetail
+              key={`${namespace}:${mount}:${selected}`}
               mount={mount}
               secretPath={selected}
               onDeleted={() => setSelected(null)}

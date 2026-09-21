@@ -9,6 +9,10 @@ const ROOT_TOKEN = process.env.ROOT_TOKEN || "root";
 // In-memory KV v2 store for mount "secret/": path -> { current_version, versions }
 const kv = new Map();
 const now = () => new Date().toISOString();
+kv.set("payments/config", {
+  current_version: 1,
+  versions: { 1: { data: { owner: "platform" }, created_time: now(), deletion_time: "", destroyed: false } },
+});
 
 function send(res, status, body) {
   const text = body === undefined ? "" : JSON.stringify(body);
@@ -81,9 +85,28 @@ const server = http.createServer(async (req, res) => {
     });
   }
   if (path(0) === "sys/mounts" || path(0) === "sys/internal/ui/mounts") {
-    const secretMount = { "secret/": { type: "kv", description: "key/value store", accessor: "kv_mock", options: { version: "2" } } };
+    const secretMount = {
+      "secret/": { type: "kv", description: "key/value store", accessor: "kv_mock", options: { version: "2" } },
+      "cubbyhole/": { type: "cubbyhole", description: "per-token storage", accessor: "cubbyhole_mock", options: null },
+      "identity/": { type: "identity", description: "identity store", accessor: "identity_mock", options: null },
+      "sys/": { type: "system", description: "system backend", accessor: "system_mock", options: null },
+    };
     if (path(0) === "sys/mounts") return send(res, 200, { data: secretMount });
     return send(res, 200, { data: { secret: secretMount, auth: {} } });
+  }
+  if (path(0) === "sys/internal/ui/resultant-acl") {
+    return send(res, 200, { data: { root: true, exact_paths: {}, glob_paths: {} } });
+  }
+  if (path(0) === "sys/capabilities-self") {
+    return send(res, 200, {
+      data: {
+        capabilities: ["root"],
+        "sys/capabilities-self": ["root"],
+        "sys/mounts": ["root"],
+        "sys/mounts/": ["root"],
+        "sys/mounts/_ui_probe": ["root"],
+      },
+    });
   }
   if (path(0) === "sys/namespaces") return send(res, 200, { data: { keys: [] } });
 

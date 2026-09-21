@@ -78,6 +78,7 @@ export type TokenLookup = {
     renewable: boolean;
     expire_time: string | null;
     meta: Record<string, string> | null;
+    namespace_path?: string;
   };
 };
 
