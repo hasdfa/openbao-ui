@@ -30,9 +30,11 @@ export type UiConfig = {
   defaultLoginMethod?: string;
   hideTokenLogin?: boolean;
   loginMethodOrder?: string[];
-  /** Public login hint: email domain → OIDC role name. OpenBao bound_claims
-   *  still decide who is allowed; this only picks the role before redirect. */
+  /** Write-only from the Google wizard. GET strips the map and exposes
+   *  `oidcNeedsEmail` instead so the login page does not learn domain names. */
   oidcDomainRoles?: OidcDomainRoles;
+  /** Derived: login should collect work email before starting OIDC. */
+  oidcNeedsEmail?: boolean;
   /** Read-only echo of the OPENBAO_UI_PUBLIC_URL env override, when set. Lets
    *  client-side OIDC setup register the same redirect origin the server uses. */
   publicUrl?: string;

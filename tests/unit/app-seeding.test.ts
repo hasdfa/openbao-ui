@@ -13,6 +13,10 @@ describe("app config seeding", () => {
     await seedAppConfigs("app", [{ mount: "prod", v2: true }], "team");
     expect(fetchBao).toHaveBeenCalledWith({ path: "prod/data/app/config", method: "POST", namespace: "team", body: { data: {}, options: { cas: 0 } } });
   });
+  it("treats a CAS conflict as already seeded", async () => {
+    fetchBao.mockRejectedValue(new BaoError(400, ["check-and-set parameter did not match the current version"]));
+    await expect(seedAppConfigs("app", [{ mount: "prod", v2: true }], "team")).resolves.toBeUndefined();
+  });
   it.each([400, 403, 503])("surfaces rejected writes (%i) instead of reporting success", async (status) => {
     fetchBao.mockRejectedValue(new BaoError(status, ["write rejected"]));
     await expect(seedAppConfigs("app", [{ mount: "prod", v2: true }], "")).rejects.toThrow(/prod/);

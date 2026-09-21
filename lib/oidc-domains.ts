@@ -223,7 +223,6 @@ function oidcRoleBody(opts: {
   redirectUri: string;
   policies: string[];
   domains: string[];
-  groupsClaim: "hd" | "iss" | null;
 }): Record<string, unknown> {
   return {
     role_type: "oidc",
@@ -231,9 +230,18 @@ function oidcRoleBody(opts: {
     oidc_scopes: ["openid", "email", "profile"],
     allowed_redirect_uris: [opts.redirectUri],
     token_policies: opts.policies,
-    ...(opts.groupsClaim ? { groups_claim: opts.groupsClaim } : {}),
     ...(opts.domains.length ? boundClaimsForDomains(opts.domains) : {}),
   };
+}
+
+/** Existing ACL policies are left alone; missing ones need a template. */
+export function teamPolicyWrite(
+  exists: boolean,
+  hasTemplate: boolean,
+): "skip" | "create" | "missing" {
+  if (exists) return "skip";
+  if (hasTemplate) return "create";
+  return "missing";
 }
 
 function parseDomainRoleRows(rows: DomainRoleRow[]): {
@@ -261,8 +269,9 @@ function parseDomainRoleRows(rows: DomainRoleRow[]): {
  * - Default Team role is granted to everyone who can join.
  * - Per-domain rows override that role for that domain.
  * - Restricted mode allowlists domains (fail closed).
- * - Open mode still creates domain-specific OIDC roles for overrides and a
- *   fallback role for everyone else.
+ * - Per-domain role overrides require an allowlist: an unrestricted fallback
+ *   role has no bound_claims, so a typed email could pick a more privileged
+ *   role than OpenBao would later grant from the real Google account.
  */
 export function planGoogleOidcRoles(input: {
   oidcRoleName: string;
@@ -275,6 +284,9 @@ export function planGoogleOidcRoles(input: {
   const base = input.oidcRoleName.trim() || "default";
   const defaultTeamRole = input.defaultTeamRole.trim() || DEFAULT_POLICY;
   const overrides = parseDomainRoleRows(input.domainRoles);
+  if (overrides.length > 0 && !input.restrict) {
+    throw new Error("Per-domain roles require restricting sign-in to those domains");
+  }
   const overrideDomains = new Set(overrides.map((o) => o.domain));
 
   const allowed: string[] = [];
@@ -307,7 +319,6 @@ export function planGoogleOidcRoles(input: {
     name: string;
     domains: string[];
     teamRole: string;
-    groupsClaim: "hd" | "iss" | null;
   }) => {
     const policies = policiesForTeamRole(opts.teamRole);
     roles.push({
@@ -315,18 +326,14 @@ export function planGoogleOidcRoles(input: {
       domains: opts.domains,
       teamRole: opts.teamRole,
       policies,
-      groupsClaim: opts.groupsClaim,
+      groupsClaim: null,
       body: oidcRoleBody({
         redirectUri: input.redirectUri,
         policies,
         domains: opts.domains,
-        groupsClaim: opts.groupsClaim,
       }),
     });
   };
-
-  const ssoClaim = (teamRole: string, kind: "hd" | "iss"): "hd" | "iss" | null =>
-    teamRole === DEFAULT_POLICY ? null : kind;
 
   if (overrides.length === 0) {
     if (input.restrict) {
@@ -334,25 +341,22 @@ export function planGoogleOidcRoles(input: {
         name: base,
         domains: allowed,
         teamRole: defaultTeamRole,
-        groupsClaim: ssoClaim(defaultTeamRole, "hd"),
       });
     } else {
       pushRole({
         name: base,
         domains: [],
         teamRole: defaultTeamRole,
-        groupsClaim: ssoClaim(defaultTeamRole, "iss"),
       });
     }
   } else {
-    const needFallback = input.restrict ? leftover.length > 0 : true;
+    const needFallback = leftover.length > 0;
     const split = overrides.length + (needFallback ? 1 : 0) > 1;
     for (const row of overrides) {
       pushRole({
         name: split ? `${base}-${slugDomain(row.domain)}` : base,
         domains: [row.domain],
         teamRole: row.teamRole,
-        groupsClaim: ssoClaim(row.teamRole, "hd"),
       });
     }
     if (needFallback) {
@@ -360,10 +364,6 @@ export function planGoogleOidcRoles(input: {
         name: base,
         domains: leftover,
         teamRole: defaultTeamRole,
-        groupsClaim: ssoClaim(
-          defaultTeamRole,
-          leftover.length > 0 ? "hd" : "iss",
-        ),
       });
     }
   }
@@ -378,26 +378,12 @@ export function planGoogleOidcRoles(input: {
   const unrestricted = roles.find((r) => r.domains.length === 0);
   const fallbackRole = unrestricted?.name;
 
+  // Group aliases keyed on Google `hd` would fail login for accounts that
+  // omit the claim. Token policies on the OIDC role are the grant.
   const ssoAliases: PlannedSsoAlias[] = [];
-  const aliasSeen = new Set<string>();
-  const addAlias = (name: string, teamRole: string) => {
-    if (teamRole === DEFAULT_POLICY || aliasSeen.has(name)) return;
-    aliasSeen.add(name);
-    ssoAliases.push({ name, teamRole });
-  };
-  for (const role of roles) {
-    if (role.groupsClaim === "iss") addAlias(GOOGLE_ISSUER, role.teamRole);
-    if (role.groupsClaim === "hd") {
-      for (const domain of role.domains) addAlias(domain, role.teamRole);
-    }
-  }
 
   const teamRolesToEnsure = [
-    ...new Set(
-      [...roles.map((r) => r.teamRole), ...ssoAliases.map((a) => a.teamRole)].filter(
-        (n) => n !== DEFAULT_POLICY,
-      ),
-    ),
+    ...new Set(roles.map((r) => r.teamRole).filter((n) => n !== DEFAULT_POLICY)),
   ];
 
   return {

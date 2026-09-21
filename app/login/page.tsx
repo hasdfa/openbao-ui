@@ -19,12 +19,7 @@ import { Disclosure } from "@/components/ui/disclosure";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { API_BASE, BASE_PATH } from "@/lib/base-path";
-import {
-  googleLoginHint,
-  resolveGoogleLogin,
-  type OidcDomainRoles,
-  type OidcDomainRoute,
-} from "@/lib/oidc-domains";
+
 
 const LOGIN_ENDPOINT = `${API_BASE}/auth/login`;
 const OIDC_START = `${API_BASE}/auth/oidc/start`;
@@ -48,7 +43,7 @@ type Branding = {
 type UiConfig = {
   branding?: Branding;
   defaultLoginMethod?: string;
-  oidcDomainRoles?: OidcDomainRoles;
+  oidcNeedsEmail?: boolean;
 };
 
 export default function LoginPage() {
@@ -63,8 +58,7 @@ export default function LoginPage() {
 
 async function startOidc(
   mount: string,
-  role?: string,
-  hd?: string,
+  opts: { role?: string; hd?: string; email?: string } = {},
 ): Promise<{ authUrl?: string; error?: string }> {
   try {
     const res = await fetch(OIDC_START, {
@@ -72,8 +66,9 @@ async function startOidc(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         mount: mount || undefined,
-        role: role || undefined,
-        hd: hd || undefined,
+        role: opts.role || undefined,
+        hd: opts.hd || undefined,
+        email: opts.email || undefined,
       }),
     });
     const data = await res.json();
@@ -82,12 +77,6 @@ async function startOidc(
   } catch {
     return { error: "Network error — is OpenBao reachable?" };
   }
-}
-
-function specForMount(cfg: UiConfig, mount: string): OidcDomainRoles | null {
-  const spec = cfg.oidcDomainRoles;
-  if (!spec || spec.mount !== mount) return null;
-  return spec;
 }
 
 function LoginForm() {
@@ -105,11 +94,7 @@ function LoginForm() {
   });
   const [error, setError] = useState<string | null>(search.get("error") || null);
   const [loading, setLoading] = useState(false);
-  const [pendingOidc, setPendingOidc] = useState<{
-    mount: string;
-    routes: OidcDomainRoute[];
-    fallbackRole?: string;
-  } | null>(null);
+  const [pendingOidc, setPendingOidc] = useState<{ mount: string } | null>(null);
   const [workEmail, setWorkEmail] = useState("");
 
   // Login customization: discovered (unauth) methods + branding/default.
@@ -156,9 +141,12 @@ function LoginForm() {
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setF((s) => ({ ...s, [k]: e.target.value }));
 
-  async function redirectOidc(mount: string, role?: string, hd?: string) {
+  async function redirectOidc(
+    mount: string,
+    opts: { role?: string; hd?: string; email?: string } = {},
+  ) {
     setLoading(true);
-    const { authUrl, error: startError } = await startOidc(mount, role, hd);
+    const { authUrl, error: startError } = await startOidc(mount, opts);
     if (startError || !authUrl) {
       setError(
         startError ??
@@ -172,31 +160,19 @@ function LoginForm() {
 
   function oidcButton(mount: string) {
     setError(null);
-    const spec = specForMount(cfg, mount);
-    const routes = spec?.roles ?? [];
-    const hint = googleLoginHint(routes, spec?.fallbackRole);
-    if (hint.askEmail) {
-      setPendingOidc({ mount, routes, fallbackRole: spec?.fallbackRole });
+    if (cfg.oidcNeedsEmail) {
+      setPendingOidc({ mount });
       setWorkEmail("");
       return;
     }
-    void redirectOidc(mount, hint.role, hint.hd);
+    void redirectOidc(mount);
   }
 
   function submitWorkEmail(e: React.FormEvent) {
     e.preventDefault();
     if (!pendingOidc) return;
     setError(null);
-    const result = resolveGoogleLogin(
-      workEmail,
-      pendingOidc.routes,
-      pendingOidc.fallbackRole,
-    );
-    if ("error" in result) {
-      setError(result.error);
-      return;
-    }
-    void redirectOidc(pendingOidc.mount, result.role, result.hd);
+    void redirectOidc(pendingOidc.mount, { email: workEmail });
   }
 
   async function submit(e: React.FormEvent) {

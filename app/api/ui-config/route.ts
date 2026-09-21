@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { isCrossSiteRequest } from "@/lib/csrf";
 import { getConfig, setConfig } from "@/lib/db";
+import { googleLoginHint, type OidcDomainRoles } from "@/lib/oidc-domains";
 import { configuredOrigin } from "@/lib/request-origin";
 import { getToken } from "@/lib/session";
 import { isOperator } from "@/lib/ui-admin";
@@ -31,7 +32,6 @@ const PUBLIC_KEYS = [
   "defaultLoginMethod",
   "hideTokenLogin",
   "loginMethodOrder",
-  "oidcDomainRoles",
 ] as const;
 
 type UiConfig = Record<string, unknown>;
@@ -48,6 +48,10 @@ export async function GET() {
   // origin. Env-derived and read-only; not persisted via PUT.
   const publicUrl = configuredOrigin();
   if (publicUrl) pub.publicUrl = publicUrl;
+  const spec = cfg.oidcDomainRoles as OidcDomainRoles | undefined;
+  if (spec) {
+    pub.oidcNeedsEmail = googleLoginHint(spec.roles ?? [], spec.fallbackRole).askEmail;
+  }
   return NextResponse.json({ config: pub });
 }
 

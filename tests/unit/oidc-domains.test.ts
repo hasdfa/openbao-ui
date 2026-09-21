@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import {
   DEFAULT_POLICY,
-  GOOGLE_ISSUER,
   addDomain,
   boundClaimsForDomains,
   displayTeamRole,
@@ -15,6 +14,7 @@ import {
   planGoogleOidcRoles,
   resolveGoogleLogin,
   ssoGroupName,
+  teamPolicyWrite,
   uniqueRoleNames,
   withGoogleHostedDomain,
 } from "@/lib/oidc-domains";
@@ -92,9 +92,9 @@ describe("planGoogleOidcRoles", () => {
     expect(plan.roles).toHaveLength(1);
     expect(plan.roles[0].body.bound_claims).toBeUndefined();
     expect(plan.roles[0].body.token_policies).toEqual(["viewer"]);
-    expect(plan.roles[0].body.groups_claim).toBe("iss");
+    expect(plan.roles[0].body.groups_claim).toBeUndefined();
     expect(plan.fallbackRole).toBe("default");
-    expect(plan.ssoAliases).toEqual([{ name: GOOGLE_ISSUER, teamRole: "viewer" }]);
+    expect(plan.ssoAliases).toEqual([]);
     expect(plan.teamRolesToEnsure).toEqual(["viewer"]);
   });
 
@@ -122,17 +122,14 @@ describe("planGoogleOidcRoles", () => {
     expect(plan.roles).toHaveLength(1);
     expect(plan.roles[0].body).toMatchObject({
       token_policies: ["editor"],
-      groups_claim: "hd",
       ...boundClaimsForDomains(["acme.com", "vendor.io"]),
     });
+    expect(plan.roles[0].body.groups_claim).toBeUndefined();
     expect(plan.domainRoutes).toEqual([
       { domain: "acme.com", role: "default" },
       { domain: "vendor.io", role: "default" },
     ]);
-    expect(plan.ssoAliases).toEqual([
-      { name: "acme.com", teamRole: "editor" },
-      { name: "vendor.io", teamRole: "editor" },
-    ]);
+    expect(plan.ssoAliases).toEqual([]);
     expect(uniqueRoleNames(plan.domainRoutes)).toEqual(["default"]);
     expect(plan.fallbackRole).toBeUndefined();
   });
@@ -154,13 +151,9 @@ describe("planGoogleOidcRoles", () => {
     ]);
     expect(plan.roles[0].body).toMatchObject({
       token_policies: ["admin"],
-      groups_claim: "hd",
       ...boundClaimsForDomains(["acme.com"]),
     });
-    expect(plan.ssoAliases).toEqual([
-      { name: "acme.com", teamRole: "admin" },
-      { name: "vendor.io", teamRole: "viewer" },
-    ]);
+    expect(plan.ssoAliases).toEqual([]);
   });
 
   it("keeps leftover allowed domains on the default Team role", () => {
@@ -177,23 +170,16 @@ describe("planGoogleOidcRoles", () => {
     ]);
   });
 
-  it("open join plus a domain override keeps a fallback role", () => {
-    const plan = planGoogleOidcRoles({
-      ...base,
-      defaultTeamRole: "viewer",
-      restrict: false,
-      allowedDomains: [],
-      domainRoles: [{ domain: "acme.com", teamRole: "admin" }],
-    });
-    expect(plan.fallbackRole).toBe("default");
-    expect(plan.domainRoutes).toEqual([{ domain: "acme.com", role: "default-acme-com" }]);
-    expect(resolveGoogleLogin("ada@gmail.com", plan.domainRoutes, plan.fallbackRole)).toEqual({
-      role: "default",
-    });
-    expect(resolveGoogleLogin("ada@acme.com", plan.domainRoutes, plan.fallbackRole)).toEqual({
-      role: "default-acme-com",
-      hd: "acme.com",
-    });
+  it("refuses per-domain roles without an allowlist (unrestricted fallback is unbound)", () => {
+    expect(() =>
+      planGoogleOidcRoles({
+        ...base,
+        defaultTeamRole: "admin",
+        restrict: false,
+        allowedDomains: [],
+        domainRoles: [{ domain: "acme.com", teamRole: "viewer" }],
+      }),
+    ).toThrow(/restricting sign-in/);
   });
 
   it("refuses a restricted join with no domains", () => {
@@ -230,6 +216,18 @@ describe("googleLoginHint", () => {
     expect(
       googleLoginHint([{ domain: "acme.com", role: "default-acme-com" }], "default"),
     ).toEqual({ askEmail: true });
+  });
+});
+
+describe("teamPolicyWrite", () => {
+  it("does not overwrite an existing ACL policy", () => {
+    expect(teamPolicyWrite(true, true)).toBe("skip");
+    expect(teamPolicyWrite(true, false)).toBe("skip");
+  });
+
+  it("creates from a template only when the policy is missing", () => {
+    expect(teamPolicyWrite(false, true)).toBe("create");
+    expect(teamPolicyWrite(false, false)).toBe("missing");
   });
 });
 

@@ -48,7 +48,11 @@ describe("jsonToRows", () => {
 
   it("omits only the synthetic blank row", () => {
     expect(rowsToData([{ key: "", value: "", placeholder: true }])).toEqual({});
-    expect(rowsToData([{ key: "", value: "" }])).toEqual({ "": "" });
+    expect(rowsToData([{ key: "", value: "", keepEmptyKey: true }])).toEqual({ "": "" });
+  });
+
+  it("drops a key the user emptied instead of writing an empty-string field", () => {
+    expect(rowsToData([{ key: "", value: "leftover" }])).toEqual({});
   });
 });
 

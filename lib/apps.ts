@@ -90,6 +90,9 @@ export async function seedAppConfigs(app: string, envs: KvMount[], namespace: st
         body: { data: {}, options: { cas: 0 } },
       });
     } catch (err) {
+      if (err instanceof BaoError && /check-and-set/i.test(err.errors.join(" "))) {
+        continue;
+      }
       const reason = err instanceof Error ? err.message : "Write failed";
       throw new Error(`Could not create config in ${env.mount}: ${reason}. Existing secrets were not overwritten; configs in earlier environments may have been created.`);
     }

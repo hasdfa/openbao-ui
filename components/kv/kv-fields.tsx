@@ -65,19 +65,28 @@ export type EditorHandle = {
   getData: () => Record<string, unknown>;
 };
 
-type Row = { key: string; value: string; placeholder?: boolean };
+type Row = {
+  key: string;
+  value: string;
+  placeholder?: boolean;
+  /** Empty key loaded from OpenBao — keep it. User-cleared keys are dropped. */
+  keepEmptyKey?: boolean;
+};
 
 function toRows(data: Record<string, unknown>): Row[] {
   const rows = Object.entries(data).map(([key, value]) => ({
     key,
     value: typeof value === "string" ? value : JSON.stringify(value),
+    ...(key === "" ? { keepEmptyKey: true } : {}),
   }));
   return rows.length ? rows : [{ key: "", value: "", placeholder: true }];
 }
 
 export function rowsToData(rows: Row[]): Record<string, unknown> {
   return Object.fromEntries(
-    rows.filter((row) => !row.placeholder).map(({ key, value }) => [key, value]),
+    rows
+      .filter((row) => !row.placeholder && !(row.key === "" && !row.keepEmptyKey))
+      .map(({ key, value }) => [key, value]),
   );
 }
 
@@ -184,7 +193,11 @@ export const KvKeyValueEditor = React.forwardRef<
                   setRows((rs) =>
                     rs.map((r, j) =>
                       j === i
-                        ? { key: e.target.value, value: r.value }
+                        ? {
+                            ...r,
+                            key: e.target.value,
+                            placeholder: r.placeholder && e.target.value === "",
+                          }
                         : r,
                     ),
                   )
@@ -197,9 +210,7 @@ export const KvKeyValueEditor = React.forwardRef<
                 onChange={(e) =>
                   setRows((rs) =>
                     rs.map((r, j) =>
-                      j === i
-                        ? { key: r.key, value: e.target.value }
-                        : r,
+                      j === i ? { ...r, value: e.target.value } : r,
                     ),
                   )
                 }

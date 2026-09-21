@@ -17,7 +17,7 @@ import {
   addDomain,
   displayTeamRole,
   planGoogleOidcRoles,
-  ssoGroupName,
+  teamPolicyWrite,
   type DomainRoleRow,
 } from "@/lib/oidc-domains";
 import { DEFAULT_ROLE_TEMPLATES } from "@/lib/role-defaults";
@@ -139,22 +139,7 @@ export function GoogleOidcWizard({
           teamRole,
           namespace,
           templates: templates.data ?? DEFAULT_ROLE_TEMPLATES,
-          accessRoles: accessRoles.data ?? [],
         });
-      }
-
-      if (plan.ssoAliases.length > 0) {
-        setStep("Linking domains to Team roles…");
-        const accessor = await oidcAccessor(m, namespace);
-        for (const alias of plan.ssoAliases) {
-          const groupId = await ensureSsoGroup(alias.teamRole, namespace);
-          await ensureGroupAlias({
-            name: alias.name,
-            groupId,
-            accessor,
-            namespace,
-          });
-        }
       }
 
       setStep("Showing it on the login page…");
@@ -239,6 +224,7 @@ export function GoogleOidcWizard({
               name="who"
               className="mt-1"
               checked={!restrict}
+              disabled={domainRoles.some((r) => r.domain.trim())}
               onChange={() => setRestrict(false)}
             />
             <span>
@@ -338,9 +324,10 @@ export function GoogleOidcWizard({
                 variant="outline"
                 size="sm"
                 className="self-start"
-                onClick={() =>
-                  setDomainRoles((rows) => [...rows, { domain: "", teamRole: defaultTeamRole }])
-                }
+                onClick={() => {
+                  setRestrict(true);
+                  setDomainRoles((rows) => [...rows, { domain: "", teamRole: defaultTeamRole }]);
+                }}
               >
                 <Plus /> Add domain
               </Button>
@@ -512,24 +499,30 @@ async function ensureTeamRole({
   teamRole,
   namespace,
   templates,
-  accessRoles,
 }: {
   teamRole: string;
   namespace: string;
   templates: { name: string; policy: string }[];
-  accessRoles: { name: string }[];
 }) {
   const tpl = templates.find((t) => t.name === teamRole);
-  if (tpl) {
+  let exists = false;
+  try {
+    await baoFetch({ path: `sys/policies/acl/${encodeURIComponent(teamRole)}`, namespace });
+    exists = true;
+  } catch (err) {
+    if (!(err instanceof BaoError && err.status === 404)) throw err;
+  }
+  const action = teamPolicyWrite(exists, !!tpl);
+  if (action === "missing") {
+    throw new Error(`Team role "${teamRole}" has no policy. Create it on Team first.`);
+  }
+  if (action === "create" && tpl) {
     await baoFetch({
       path: `sys/policies/acl/${tpl.name}`,
       method: "POST",
       namespace,
       body: { policy: tpl.policy },
     });
-  } else if (!accessRoles.some((r) => r.name === teamRole)) {
-    // Scoped roles are applied from Team; a custom name is used as a policy
-    // reference. OpenBao ignores unknown policy names on the token.
   }
   try {
     await baoFetch({
@@ -540,94 +533,5 @@ async function ensureTeamRole({
     });
   } catch (err) {
     if (!(err instanceof BaoError && /already exists/i.test(err.errors.join(" ")))) throw err;
-  }
-}
-
-async function ensureSsoGroup(teamRole: string, namespace: string): Promise<string> {
-  const name = ssoGroupName(teamRole);
-  try {
-    await baoFetch({
-      path: "identity/group",
-      method: "POST",
-      namespace,
-      body: {
-        name,
-        type: "external",
-        policies: [teamRole],
-        metadata: { sso: "google", role: teamRole },
-      },
-    });
-  } catch (err) {
-    if (!(err instanceof BaoError && /already exists/i.test(err.errors.join(" ")))) throw err;
-  }
-  const res = await baoFetch<{ data: { id: string } }>({
-    path: `identity/group/name/${encodeURIComponent(name)}`,
-    namespace,
-  });
-  return res.data.id;
-}
-
-async function oidcAccessor(mount: string, namespace: string): Promise<string> {
-  const res = await baoFetch<{
-    data: Record<string, { accessor?: string }>;
-  }>({ path: "sys/auth", namespace });
-  const keyed = res.data[`${mount}/`] ?? res.data[mount];
-  const accessor = keyed?.accessor;
-  if (!accessor) throw new Error("Could not read the OIDC mount accessor");
-  return accessor;
-}
-
-async function ensureGroupAlias({
-  name,
-  groupId,
-  accessor,
-  namespace,
-}: {
-  name: string;
-  groupId: string;
-  accessor: string;
-  namespace: string;
-}) {
-  try {
-    await baoFetch({
-      path: "identity/group-alias",
-      method: "POST",
-      namespace,
-      body: { name, canonical_id: groupId, mount_accessor: accessor },
-    });
-    return;
-  } catch (err) {
-    if (!(err instanceof BaoError && /already exists|in use/i.test(err.errors.join(" ")))) {
-      throw err;
-    }
-  }
-  let ids: string[] = [];
-  try {
-    const listed = await baoFetch<{ data: { keys?: string[] } }>({
-      path: "identity/group-alias/id",
-      namespace,
-      list: true,
-    });
-    ids = listed.data?.keys ?? [];
-  } catch {
-    return;
-  }
-  for (const id of ids.slice(0, 200)) {
-    try {
-      const row = await baoFetch<{
-        data: { name?: string; mount_accessor?: string };
-      }>({ path: `identity/group-alias/id/${id}`, namespace });
-      if (row.data?.name === name && row.data.mount_accessor === accessor) {
-        await baoFetch({
-          path: `identity/group-alias/id/${id}`,
-          method: "POST",
-          namespace,
-          body: { canonical_id: groupId },
-        });
-        return;
-      }
-    } catch {
-      // keep scanning
-    }
   }
 }
