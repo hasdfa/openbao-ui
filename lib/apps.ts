@@ -116,6 +116,9 @@ export function useCreateApp() {
       description?: string;
       envs?: KvMount[];
     }) => {
+      if (!vars.app || vars.app === "." || vars.app === "..") {
+        throw new Error("Invalid app name");
+      }
       await seedAppConfigs(vars.app, vars.envs ?? [], namespace);
       await setLabel.mutateAsync({
         scope: "application",

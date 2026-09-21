@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { isCrossSiteRequest } from "@/lib/csrf";
 import { getConfig, setConfig } from "@/lib/db";
 import { authorizeMetadata } from "@/lib/metadata-auth";
+import { safeAuthMount, safeBaoName } from "@/lib/oidc-domains";
 import { isOperator } from "@/lib/ui-admin";
 
 /**
@@ -14,6 +15,21 @@ import { isOperator } from "@/lib/ui-admin";
  *   PUT /ui2/api/app-credentials  — operator only (namespace from header)
  */
 export const dynamic = "force-dynamic";
+
+function invalidStoredCredential(raw: unknown): string | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return "credential must be an object";
+  const cred = raw as Record<string, unknown>;
+  if (!safeBaoName(typeof cred.app === "string" ? cred.app : "")) return "invalid app name";
+  if (!safeAuthMount(typeof cred.mount === "string" ? cred.mount : "")) return "invalid AppRole mount";
+  if (!Array.isArray(cred.roles)) return "roles must be an array";
+  for (const row of cred.roles) {
+    if (!row || typeof row !== "object" || Array.isArray(row)) return "role entry must be an object";
+    const rec = row as Record<string, unknown>;
+    if (!safeBaoName(typeof rec.role === "string" ? rec.role : "")) return "invalid role name";
+    if (!safeBaoName(typeof rec.policy === "string" ? rec.policy : "")) return "invalid policy name";
+  }
+  return null;
+}
 
 const key = (ns: string) => `app-credentials::${ns}`;
 
@@ -45,6 +61,10 @@ export async function PUT(req: NextRequest) {
   }
   if (!Array.isArray(body.creds)) {
     return NextResponse.json({ errors: ["creds must be an array"] }, { status: 400 });
+  }
+  for (const cred of body.creds) {
+    const err = invalidStoredCredential(cred);
+    if (err) return NextResponse.json({ errors: [err] }, { status: 400 });
   }
   try {
     setConfig(key(ns), body.creds);

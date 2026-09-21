@@ -38,7 +38,7 @@ export function NewAppDialog({ onClose }: { onClose: () => void }) {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    if (!/^[a-zA-Z0-9_.-]+$/.test(cleanApp)) {
+    if (!/^[a-zA-Z0-9_][a-zA-Z0-9_.-]*$/.test(cleanApp) || cleanApp === "." || cleanApp === "..") {
       setError("App name is required (letters, numbers, _ . -)");
       return;
     }

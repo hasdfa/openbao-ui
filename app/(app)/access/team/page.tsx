@@ -60,9 +60,9 @@ export default function TeamPage() {
     <div className="mx-auto max-w-5xl p-6">
       <p className="mb-5 text-sm text-muted-foreground">
         Members are OpenBao identity entities (created automatically when people
-        sign in, e.g. via Google). A <strong>role</strong> is a policy + group.
-        Google sign-in can grant a role by email domain; you can still assign
-        more here. Changes take effect the next time the member signs in.
+        sign in, e.g. via Google). A <strong>role</strong> assigned here is a
+        policy + group. Google sign-in grants its role on the OIDC token — removing
+        a chip here does not change that. Edit Access → Auth Methods instead.
       </p>
 
       {/* Roles catalog */}

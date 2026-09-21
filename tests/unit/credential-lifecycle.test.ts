@@ -27,6 +27,11 @@ describe("credential revocation", () => {
     fetchBao.mockResolvedValueOnce(null).mockRejectedValueOnce(new BaoError(503, ["sealed"]));
     await expect(deleteCredentialResources(cred, "team")).rejects.toThrow("sealed");
   });
+  it("refuses to interpolate a stored path-traversal policy name", async () => {
+    const bad = { ...cred, roles: [{ env: "prod", role: "ok-role", policy: "../../sys" }] };
+    await expect(deleteCredentialResources(bad, "team")).rejects.toThrow(/Invalid stored/);
+    expect(fetchBao).not.toHaveBeenCalled();
+  });
   it("can retry partially completed deletion using saved legacy names", async () => {
     fetchBao.mockRejectedValueOnce(new BaoError(404, ["missing"])).mockResolvedValueOnce(null);
     await expect(deleteCredentialResources(cred, "team")).resolves.toBeUndefined();

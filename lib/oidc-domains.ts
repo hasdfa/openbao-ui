@@ -171,6 +171,14 @@ export function slugDomain(domain: string): string {
 const AUTH_MOUNT_RE = /^[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*$/;
 
 /** Reject path traversal before interpolating an unauthenticated OIDC mount. */
+/** Names interpolated into OpenBao paths (roles, policies, apps). */
+export function safeBaoName(raw: string | undefined): string | null {
+  const name = (raw ?? "").trim();
+  if (!name || name === "." || name === "..") return null;
+  if (!/^[A-Za-z0-9_][A-Za-z0-9_.-]*$/.test(name)) return null;
+  return name;
+}
+
 export function safeAuthMount(raw: string | undefined): string | null {
   const mount = (raw || "oidc").replace(/\/+$/g, "");
   if (!mount || !AUTH_MOUNT_RE.test(mount)) return null;

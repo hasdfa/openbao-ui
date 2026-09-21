@@ -15,6 +15,7 @@ import {
   resolveGoogleLogin,
   resolveOidcStartRole,
   safeAuthMount,
+  safeBaoName,
   ssoGroupName,
   teamPolicyWrite,
   uniqueRoleNames,
@@ -257,6 +258,12 @@ describe("safeAuthMount / resolveOidcStartRole", () => {
   it("rejects path-traversal mounts", () => {
     expect(safeAuthMount("../../sys/init")).toBeNull();
     expect(safeAuthMount("oidc/")).toBe("oidc");
+  });
+
+  it("rejects . and .. as OpenBao names", () => {
+    expect(safeBaoName(".")).toBeNull();
+    expect(safeBaoName("..")).toBeNull();
+    expect(safeBaoName("payments")).toBe("payments");
   });
 
   it("allowlists roles from the stored spec and requires email when several exist", () => {

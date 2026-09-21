@@ -141,6 +141,27 @@ export function GoogleOidcWizard({
         });
       }
 
+      const previous = uiConfig.data?.oidcDomainRoles;
+      if (previous && safeAuthMount(previous.mount) === m) {
+        const keep = new Set(plan.roles.map((r) => r.name));
+        const stale = [
+          ...(previous.roles ?? []).map((r) => r.role),
+          previous.fallbackRole,
+        ].filter((name): name is string => !!name && !keep.has(name));
+        for (const name of stale) {
+          setStep(`Removing previous sign-in role ${name}…`);
+          try {
+            await baoFetch({
+              path: `auth/${m}/role/${name}`,
+              method: "DELETE",
+              namespace,
+            });
+          } catch (err) {
+            if (!(err instanceof BaoError && err.status === 404)) throw err;
+          }
+        }
+      }
+
       for (const teamRole of plan.teamRolesToEnsure) {
         setStep(`Ensuring Team role ${teamRole}…`);
         await ensureTeamRole({

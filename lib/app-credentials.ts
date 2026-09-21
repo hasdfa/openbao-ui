@@ -6,6 +6,7 @@ import { API_BASE } from "@/lib/base-path";
 import { buildAccessPolicy, type AccessLevel, type EnvTarget } from "@/lib/access-policy";
 import { resolveEnvs, type EnvSelector } from "@/lib/access-roles";
 import { baoFetch, BaoError } from "@/lib/bao-client";
+import { safeAuthMount, safeBaoName } from "@/lib/oidc-domains";
 import { useNamespace } from "@/lib/namespace";
 
 // A machine identity for an app: one AppRole per environment (isolated), each
@@ -136,12 +137,13 @@ export function useIssueAppCredential() {
       paths?: string[];
       existing: AppCredential[];
     }): Promise<{ definition: AppCredential; issued: IssuedCred[] }> => {
-      const app = vars.app.trim();
-      if (!/^[a-zA-Z0-9_.-]+$/.test(app)) throw new Error("App name contains unsupported characters");
+      const app = safeBaoName(vars.app);
+      if (!app) throw new Error("App name contains unsupported characters");
       if (vars.existing.some((c) => sameCred(c, app, vars.env))) {
         throw new Error("This credential already exists. Rotate it, or revoke it before issuing a replacement.");
       }
-      const mount = stripSlash(vars.mount || "approle");
+      const mount = safeAuthMount(vars.mount || "approle");
+      if (!mount) throw new Error("Invalid AppRole mount");
       const envs = resolveEnvs(vars.env);
       if (envs.length === 0) throw new Error("No environments matched this selection");
 
@@ -227,8 +229,13 @@ export function useRotateSecretId() {
 }
 
 export async function deleteCredentialResources(cred: AppCredential, namespace: string): Promise<void> {
+  const mount = safeAuthMount(cred.mount);
+  if (!mount) throw new Error("Invalid AppRole mount");
   for (const r of cred.roles) {
-    for (const path of [`auth/${stripSlash(cred.mount)}/role/${r.role}`, `sys/policies/acl/${r.policy}`]) {
+    const role = safeBaoName(r.role);
+    const policy = safeBaoName(r.policy);
+    if (!role || !policy) throw new Error("Invalid stored role or policy name");
+    for (const path of [`auth/${mount}/role/${role}`, `sys/policies/acl/${policy}`]) {
       try {
         await baoFetch({ path, method: "DELETE", namespace });
       } catch (err) {
