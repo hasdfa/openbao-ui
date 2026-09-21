@@ -118,7 +118,8 @@ test("namespace switching discards an open cached draft", async ({ page }) => {
   // Warm the alternate namespace's query cache before returning to root.
   await page.getByRole("button", { name: /Workspace/ }).click();
   await page.getByPlaceholder("enter namespace path…").fill("team-a");
-  await page.getByRole("button", { name: "Go" }).click();
+  // exact: "Go" is a substring of "Set up Google" on the overview checklist.
+  await page.getByRole("button", { name: "Go", exact: true }).click();
   await page.goto("/ui2/secrets/secret/demo");
   await expect(page.getByRole("button", { name: "Edit" })).toBeVisible();
   await page.getByRole("button", { name: /Workspace/ }).click();
@@ -129,7 +130,7 @@ test("namespace switching discards an open cached draft", async ({ page }) => {
   await page.getByPlaceholder("value").fill("unsaved-root-draft");
   await page.getByRole("button", { name: /Workspace/ }).click();
   await page.getByPlaceholder("enter namespace path…").fill("team-a");
-  await page.getByRole("button", { name: "Go" }).click();
+  await page.getByRole("button", { name: "Go", exact: true }).click();
 
   await expect(page.getByRole("button", { name: "Edit" })).toBeVisible();
   await expect(page.locator('input[value="unsaved-root-draft"]')).toHaveCount(0);
@@ -179,7 +180,7 @@ test("structure editor snapshots CAS and closes a draft on namespace change", as
   await page.getByPlaceholder("value").fill("discard-structure-draft");
   await page.getByRole("button", { name: /Workspace/ }).click();
   await page.getByPlaceholder("enter namespace path…").fill("team-a");
-  await page.getByRole("button", { name: "Go" }).click();
+  await page.getByRole("button", { name: "Go", exact: true }).click();
   await expect(page.locator('input[value="discard-structure-draft"]')).toHaveCount(0);
   expect(state.writes).toHaveLength(1);
 });
@@ -193,14 +194,16 @@ test("invalid and typed JSON remain in the raw editor", async ({ page }) => {
   await page.getByRole("button", { name: "Raw JSON" }).click();
 
   const textarea = page.locator("textarea");
+  const jsonAlert = page.locator("p[role='alert']");
   await textarea.fill('{"token":');
   await page.getByRole("button", { name: "Key/value editor" }).click();
-  await expect(page.getByRole("alert")).toBeVisible();
+  // Next.js also mounts a route announcer with role="alert".
+  await expect(jsonAlert).toBeVisible();
   await expect(textarea).toHaveValue('{"token":');
 
   await textarea.fill('{"nested":{"enabled":true}}');
   await page.getByRole("button", { name: "Key/value editor" }).click();
-  await expect(page.getByRole("alert")).toContainText("only supports string values");
+  await expect(jsonAlert).toContainText("only supports string values");
   await expect(textarea).toHaveValue('{"nested":{"enabled":true}}');
 });
 

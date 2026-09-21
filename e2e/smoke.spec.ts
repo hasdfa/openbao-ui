@@ -228,8 +228,8 @@ test("environments: customize a friendly display name", async ({ page }) => {
   await page.fill("#lbl-name", friendly);
   await page.getByRole("button", { name: "Save" }).click();
 
-  // the friendly name replaces the raw mount path as the card title
-  await expect(page.getByText(friendly)).toBeVisible();
+  // the friendly name replaces the raw mount path as the environment title
+  await expect(page.getByRole("link", { name: friendly })).toBeVisible();
 });
 
 test("settings: profile, preferences, namespaces", async ({ page }) => {
