@@ -45,6 +45,8 @@ export type Entity = {
   disabled: boolean;
   metadata: Record<string, string> | null;
   aliases: { mount_path: string; name: string }[];
+  group_ids?: string[];
+  direct_group_ids?: string[];
 };
 
 export function useEntity(id: string | null) {

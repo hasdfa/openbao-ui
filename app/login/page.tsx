@@ -21,7 +21,7 @@ import { Label } from "@/components/ui/label";
 import { API_BASE, BASE_PATH } from "@/lib/base-path";
 import {
   googleLoginHint,
-  matchDomainRole,
+  resolveGoogleLogin,
   type OidcDomainRoles,
   type OidcDomainRoute,
 } from "@/lib/oidc-domains";
@@ -84,10 +84,10 @@ async function startOidc(
   }
 }
 
-function routesForMount(cfg: UiConfig, mount: string): OidcDomainRoute[] {
+function specForMount(cfg: UiConfig, mount: string): OidcDomainRoles | null {
   const spec = cfg.oidcDomainRoles;
-  if (!spec || spec.mount !== mount) return [];
-  return spec.roles ?? [];
+  if (!spec || spec.mount !== mount) return null;
+  return spec;
 }
 
 function LoginForm() {
@@ -108,6 +108,7 @@ function LoginForm() {
   const [pendingOidc, setPendingOidc] = useState<{
     mount: string;
     routes: OidcDomainRoute[];
+    fallbackRole?: string;
   } | null>(null);
   const [workEmail, setWorkEmail] = useState("");
 
@@ -171,10 +172,11 @@ function LoginForm() {
 
   function oidcButton(mount: string) {
     setError(null);
-    const routes = routesForMount(cfg, mount);
-    const hint = googleLoginHint(routes);
+    const spec = specForMount(cfg, mount);
+    const routes = spec?.roles ?? [];
+    const hint = googleLoginHint(routes, spec?.fallbackRole);
     if (hint.askEmail) {
-      setPendingOidc({ mount, routes });
+      setPendingOidc({ mount, routes, fallbackRole: spec?.fallbackRole });
       setWorkEmail("");
       return;
     }
@@ -185,12 +187,16 @@ function LoginForm() {
     e.preventDefault();
     if (!pendingOidc) return;
     setError(null);
-    const match = matchDomainRole(workEmail, pendingOidc.routes);
-    if (!match) {
-      setError("That email domain isn't allowed.");
+    const result = resolveGoogleLogin(
+      workEmail,
+      pendingOidc.routes,
+      pendingOidc.fallbackRole,
+    );
+    if ("error" in result) {
+      setError(result.error);
       return;
     }
-    void redirectOidc(pendingOidc.mount, match.role, match.domain);
+    void redirectOidc(pendingOidc.mount, result.role, result.hd);
   }
 
   async function submit(e: React.FormEvent) {
@@ -349,8 +355,8 @@ function LoginForm() {
                 />
               </Field>
               <p className="text-xs text-muted-foreground">
-                Used to pick the Google sign-in role for your domain. OpenBao still
-                checks the account Google returns.
+                Used to pick the role for your domain. OpenBao still checks the
+                Google account that signs in.
               </p>
               <Button type="submit" disabled={loading || !workEmail.trim()}>
                 {loading ? "Signing in…" : "Continue with Google"}

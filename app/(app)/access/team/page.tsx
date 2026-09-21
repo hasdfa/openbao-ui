@@ -24,6 +24,7 @@ import {
   useSetGroupMembers,
   type Group,
 } from "@/lib/identity";
+import { displayTeamRole, isSsoGroup } from "@/lib/oidc-domains";
 import { useApplyRoleTemplate, useRoleTemplates } from "@/lib/roles";
 
 function envSummary(env: EnvSelector): string {
@@ -59,9 +60,9 @@ export default function TeamPage() {
     <div className="mx-auto max-w-5xl p-6">
       <p className="mb-5 text-sm text-muted-foreground">
         Members are OpenBao identity entities (created automatically when people
-        sign in, e.g. via Google). A <strong>role</strong> is a policy + group;
-        assigning one adds the member to that group. Changes take effect the next
-        time the member signs in.
+        sign in, e.g. via Google). A <strong>role</strong> is a policy + group.
+        Google sign-in can grant a role by email domain; you can still assign
+        more here. Changes take effect the next time the member signs in.
       </p>
 
       {/* Roles catalog */}
@@ -250,9 +251,18 @@ function MemberDetail({
   const entity = useEntity(entityId);
   const setMembers = useSetGroupMembers();
 
-  const roles = groups.filter((g) => g.member_entity_ids?.includes(entityId));
+  const entityGroupIds = new Set([
+    ...(entity.data?.group_ids ?? []),
+    ...(entity.data?.direct_group_ids ?? []),
+  ]);
+  const roles = groups.filter(
+    (g) =>
+      g.member_entity_ids?.includes(entityId) || entityGroupIds.has(g.id),
+  );
   const roleIds = new Set(roles.map((g) => g.id));
-  const available = groups.filter((g) => !roleIds.has(g.id));
+  const available = groups.filter(
+    (g) => !roleIds.has(g.id) && !isSsoGroup(g.name, g.type),
+  );
 
   function addRole(group: Group) {
     const members = [...(group.member_entity_ids ?? []), entityId];
@@ -295,25 +305,33 @@ function MemberDetail({
           {roles.length === 0 ? (
             <span className="text-sm text-muted-foreground">No roles assigned.</span>
           ) : (
-            roles.map((g) => (
-              <span
-                key={g.id}
-                className="inline-flex items-center gap-1.5 rounded-md border bg-card px-2 py-1 text-sm"
-              >
-                <span className={`size-2 rounded-full ${colorDot(colorByName[g.name])}`} />
-                <span className="capitalize">{g.name}</span>
-                <button
-                  type="button"
-                  title="Remove role"
-                  aria-label={`Remove ${g.name}`}
-                  disabled={setMembers.isPending}
-                  onClick={() => removeRole(g)}
-                  className="text-muted-foreground hover:text-destructive"
+            roles.map((g) => {
+              const sso = isSsoGroup(g.name, g.type);
+              const label = displayTeamRole(g.name);
+              return (
+                <span
+                  key={g.id}
+                  className="inline-flex items-center gap-1.5 rounded-md border bg-card px-2 py-1 text-sm"
                 >
-                  <X className="size-3.5" />
-                </button>
-              </span>
-            ))
+                  <span className={`size-2 rounded-full ${colorDot(colorByName[label] ?? colorByName[g.name])}`} />
+                  <span className="capitalize">{label}</span>
+                  {sso ? (
+                    <Badge variant="muted">Google</Badge>
+                  ) : (
+                    <button
+                      type="button"
+                      title="Remove role"
+                      aria-label={`Remove ${label}`}
+                      disabled={setMembers.isPending}
+                      onClick={() => removeRole(g)}
+                      className="text-muted-foreground hover:text-destructive"
+                    >
+                      <X className="size-3.5" />
+                    </button>
+                  )}
+                </span>
+              );
+            })
           )}
         </div>
       </div>
