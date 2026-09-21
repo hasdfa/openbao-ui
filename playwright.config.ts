@@ -6,6 +6,8 @@ import { defineConfig } from "@playwright/test";
 // then: E2E_TOKEN=root pnpm e2e
 export default defineConfig({
   testDir: "./e2e",
+  // Suites share one OpenBao instance and mutate auth/branding configuration.
+  workers: 1,
   reporter: "list",
   use: {
     baseURL: process.env.E2E_BASE_URL ?? "http://localhost:3000",

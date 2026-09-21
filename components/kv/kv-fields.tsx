@@ -65,18 +65,43 @@ export type EditorHandle = {
   getData: () => Record<string, unknown>;
 };
 
-type Row = { key: string; value: string };
+type Row = { key: string; value: string; placeholder?: boolean };
 
 function toRows(data: Record<string, unknown>): Row[] {
   const rows = Object.entries(data).map(([key, value]) => ({
     key,
     value: typeof value === "string" ? value : JSON.stringify(value),
   }));
-  return rows.length ? rows : [{ key: "", value: "" }];
+  return rows.length ? rows : [{ key: "", value: "", placeholder: true }];
+}
+
+export function rowsToData(rows: Row[]): Record<string, unknown> {
+  return Object.fromEntries(
+    rows.filter((row) => !row.placeholder).map(({ key, value }) => [key, value]),
+  );
 }
 
 const hasNonString = (data: Record<string, unknown>) =>
   Object.values(data).some((v) => typeof v !== "string");
+
+export function jsonToRows(json: string): Row[] {
+  const parsed: unknown = JSON.parse(json);
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("Secret data must be a JSON object");
+  }
+  const data = parsed as Record<string, unknown>;
+  if (hasNonString(data)) {
+    throw new Error("Key/value editor only supports string values");
+  }
+  return toRows(data);
+}
+
+export function snapshotKvDraft(
+  data: Record<string, unknown>,
+  cas: number | undefined,
+) {
+  return { data: structuredClone(data), cas };
+}
 
 export const KvKeyValueEditor = React.forwardRef<
   EditorHandle,
@@ -91,6 +116,7 @@ export const KvKeyValueEditor = React.forwardRef<
   const [json, setJson] = React.useState(() =>
     JSON.stringify(initial, null, 2),
   );
+  const [modeError, setModeError] = React.useState<string | null>(null);
 
   React.useImperativeHandle(ref, () => ({
     getData() {
@@ -101,28 +127,24 @@ export const KvKeyValueEditor = React.forwardRef<
         }
         return parsed as Record<string, unknown>;
       }
-      const out: Record<string, unknown> = {};
-      for (const { key, value } of rows) {
-        if (key.trim()) out[key.trim()] = value;
-      }
-      return out;
+      return rowsToData(rows);
     },
   }));
 
   function switchToRaw() {
-    const out: Record<string, unknown> = {};
-    for (const { key, value } of rows) if (key.trim()) out[key.trim()] = value;
+    const out = rowsToData(rows);
     setJson(JSON.stringify(out, null, 2));
+    setModeError(null);
     setRaw(true);
   }
 
   function switchToRows() {
     try {
-      setRows(toRows(JSON.parse(json)));
+      setRows(jsonToRows(json));
+      setModeError(null);
       setRaw(false);
-    } catch {
-      setRows(toRows({}));
-      setRaw(false);
+    } catch (e) {
+      setModeError(e instanceof Error ? e.message : "Invalid JSON");
     }
   }
 
@@ -138,6 +160,10 @@ export const KvKeyValueEditor = React.forwardRef<
           {raw ? "Key/value editor" : "Raw JSON"}
         </Button>
       </div>
+
+      {modeError ? (
+        <p role="alert" className="text-sm text-destructive">{modeError}</p>
+      ) : null}
 
       {raw ? (
         <textarea
@@ -157,7 +183,9 @@ export const KvKeyValueEditor = React.forwardRef<
                 onChange={(e) =>
                   setRows((rs) =>
                     rs.map((r, j) =>
-                      j === i ? { ...r, key: e.target.value } : r,
+                      j === i
+                        ? { key: e.target.value, value: r.value }
+                        : r,
                     ),
                   )
                 }
@@ -169,7 +197,9 @@ export const KvKeyValueEditor = React.forwardRef<
                 onChange={(e) =>
                   setRows((rs) =>
                     rs.map((r, j) =>
-                      j === i ? { ...r, value: e.target.value } : r,
+                      j === i
+                        ? { key: r.key, value: e.target.value }
+                        : r,
                     ),
                   )
                 }
@@ -193,7 +223,7 @@ export const KvKeyValueEditor = React.forwardRef<
             variant="outline"
             size="sm"
             className="self-start"
-            onClick={() => setRows((rs) => [...rs, { key: "", value: "" }])}
+            onClick={() => setRows((rs) => [...rs, { key: "", value: "", placeholder: true }])}
           >
             <Plus /> Add field
           </Button>

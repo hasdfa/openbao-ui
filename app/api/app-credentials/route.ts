@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { isCrossSiteRequest } from "@/lib/csrf";
 import { getConfig, setConfig } from "@/lib/db";
-import { getToken } from "@/lib/session";
+import { authorizeMetadata } from "@/lib/metadata-auth";
 import { isOperator } from "@/lib/ui-admin";
 
 /**
@@ -18,24 +18,20 @@ export const dynamic = "force-dynamic";
 const key = (ns: string) => `app-credentials::${ns}`;
 
 export async function GET(req: NextRequest) {
-  const token = await getToken();
-  if (!token) {
-    return NextResponse.json({ errors: ["not authenticated"] }, { status: 401 });
-  }
-  const ns = req.headers.get("x-vault-namespace") ?? "";
+  const auth = await authorizeMetadata(req);
+  if (auth.error) return auth.error;
+  const { namespace: ns } = auth;
   return NextResponse.json({ creds: getConfig<unknown[]>(key(ns)) ?? [] });
 }
 
 export async function PUT(req: NextRequest) {
-  const token = await getToken();
-  if (!token) {
-    return NextResponse.json({ errors: ["not authenticated"] }, { status: 401 });
-  }
+  const auth = await authorizeMetadata(req);
+  if (auth.error) return auth.error;
+  const { namespace: ns } = auth;
   if (isCrossSiteRequest(req)) {
     return NextResponse.json({ errors: ["cross-site request blocked"] }, { status: 403 });
   }
-  const ns = req.headers.get("x-vault-namespace") ?? "";
-  if (!(await isOperator(token, ns))) {
+  if (!(await isOperator(auth.token, ns))) {
     return NextResponse.json(
       { errors: ["forbidden: requires mount-management capability"] },
       { status: 403 },

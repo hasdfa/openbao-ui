@@ -1,7 +1,8 @@
 "use client";
 
 import { LogIn } from "lucide-react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
+import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
 
 import { Logo } from "@/components/logo";
@@ -17,7 +18,7 @@ import {
 import { Disclosure } from "@/components/ui/disclosure";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { API_BASE } from "@/lib/base-path";
+import { API_BASE, BASE_PATH } from "@/lib/base-path";
 
 const LOGIN_ENDPOINT = `${API_BASE}/auth/login`;
 const OIDC_START = `${API_BASE}/auth/oidc/start`;
@@ -69,7 +70,7 @@ async function startOidc(mount: string): Promise<{ authUrl?: string; error?: str
 }
 
 function LoginForm() {
-  const router = useRouter();
+  const client = useQueryClient();
   const search = useSearchParams();
   const [method, setMethod] = useState("token");
   const [f, setF] = useState({
@@ -176,8 +177,9 @@ function LoginForm() {
         setError(data.error ?? "Login failed");
         return;
       }
-      router.push("/");
-      router.refresh();
+      await client.cancelQueries();
+      client.clear();
+      window.location.replace(BASE_PATH);
     } catch {
       setError("Network error — is OpenBao reachable?");
     } finally {

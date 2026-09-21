@@ -3,26 +3,24 @@ import { describe, expect, it } from "vitest";
 import { credNames, envIdent } from "@/lib/app-credentials";
 
 describe("credNames", () => {
-  it("names a read-only (viewer) credential", () => {
-    expect(credNames("payments", "prod", "viewer")).toEqual({
-      role: "payments-prod",
-      policy: "payments-prod-read",
-    });
+  it("uses a fresh unique identity even when display slugs collide", () => {
+    const first = credNames("app-prod", "east", "viewer");
+    const second = credNames("app", "prod-east", "viewer");
+    expect(first.role).not.toBe(second.role);
+    expect(first.policy).toBe(`${first.role}-read`);
+    expect(first.role).toMatch(/^[a-zA-Z0-9_.-]+$/);
   });
 
-  it("names a read/write (editor) credential", () => {
-    expect(credNames("payments", "prod-eu", "editor")).toEqual({
-      role: "payments-prod-eu",
-      policy: "payments-prod-eu-editor",
-    });
+  it("isolates repeated issuances and permission levels", () => {
+    const first = credNames("app", "prod", "viewer");
+    const second = credNames("app", "prod", "editor");
+    expect(first.role).not.toBe(second.role);
+    expect(second.policy).toBe(`${second.role}-editor`);
   });
 
-  it("sanitizes unsafe characters in app/env names", () => {
-    const { role, policy } = credNames("My App!", "prod/east", "viewer");
-    expect(role).toBe("My-App-prod-east");
-    expect(policy).toBe("My-App-prod-east-read");
-    // no spaces, slashes, or doubled separators
-    expect(role).not.toMatch(/[^a-zA-Z0-9_.-]/);
+  it("does not identify roles by lossy slugs", () => {
+    expect(credNames("My App!", "prod/east", "viewer").role)
+      .not.toBe(credNames("My-App", "prod-east", "viewer").role);
   });
 });
 

@@ -25,18 +25,16 @@ export type AccessScope = {
 };
 
 const strip = (s: string) => s.replace(/^\/+|\/+$/g, "");
-// Strip anything that isn't path-safe (notably `"` and newlines) so a
-// user-editable mount / env name can't break out of the quoted HCL string and
-// inject extra `path` blocks. Slashes are kept (path separators).
-const safe = (s: string) => s.replace(/[^A-Za-z0-9._\-/]/g, "");
-// Like `safe`, but for the selected path suffix where `*` and `+` are legitimate
-// OpenBao glob wildcards.
-const safePath = (s: string) => strip(s).replace(/[^A-Za-z0-9._\-/*+]/g, "");
-const seg = (...parts: (string | undefined)[]) =>
-  parts
-    .map((p) => safe(strip(p ?? "")))
-    .filter(Boolean)
-    .join("/");
+function policyPath(value: string, glob = false): string {
+  const path = strip(value);
+  const allowed = glob ? /^[A-Za-z0-9._\-/*+]+$/ : /^[A-Za-z0-9._\-/]+$/;
+  const parts = path.split("/");
+  if (!allowed.test(path) || parts.some((part) => !part || part === "." || part === "..") ||
+      (glob && (path.slice(0, -1).includes("*") || parts.some((part) => part.includes("+") && part !== "+")))) {
+    throw new Error("Unsupported policy path. Use letters, numbers, _ . - and /; globs allow a trailing * or a whole-segment +.");
+  }
+  return path;
+}
 
 // KV v2 secret data lives under <mount>/data/..., listing/versioning under
 // <mount>/metadata/.... Editors get full CRUD on data; metadata stays read/list
@@ -60,7 +58,7 @@ const capsList = (c: string[]) => c.map((x) => `"${x}"`).join(", ");
  * the whole environment.
  */
 export function buildAccessPolicy(scope: AccessScope): string {
-  const paths = (scope.paths ?? []).map(safePath).filter(Boolean);
+  const paths = (scope.paths ?? []).map((path) => policyPath(path, true));
   const list = paths.length ? paths : ["*"];
 
   const blocks: string[] = [];
@@ -72,8 +70,10 @@ export function buildAccessPolicy(scope: AccessScope): string {
   };
 
   for (const env of scope.envs) {
-    const dataPrefix = seg(env.mount, "data", env.envPath);
-    const metaPrefix = seg(env.mount, "metadata", env.envPath);
+    const mount = policyPath(env.mount);
+    const suffix = env.envPath === undefined ? "" : `/${policyPath(env.envPath)}`;
+    const dataPrefix = `${mount}/data${suffix}`;
+    const metaPrefix = `${mount}/metadata${suffix}`;
     for (const p of list) {
       add(`${dataPrefix}/${p}`, DATA_CAPS[scope.level]);
       add(`${metaPrefix}/${p}`, META_CAPS[scope.level]);
@@ -81,7 +81,7 @@ export function buildAccessPolicy(scope: AccessScope): string {
   }
 
   const where = scope.envs
-    .map((e) => seg(e.mount, e.envPath) || strip(e.mount))
+    .map((e) => [policyPath(e.mount), e.envPath === undefined ? undefined : policyPath(e.envPath)].filter(Boolean).join("/"))
     .join(", ");
   const header =
     `# scoped access — level: ${scope.level}, paths: ${list.join(" ")}\n` +

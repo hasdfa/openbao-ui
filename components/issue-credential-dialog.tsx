@@ -13,7 +13,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { buildAccessPolicy, type AccessLevel } from "@/lib/access-policy";
 import {
-  credNames,
   envIdent,
   useIssueAppCredential,
   type AppCredential,
@@ -55,10 +54,14 @@ export function IssueCredentialDialog({
 
   const envs = resolveEnvs(env);
   const cleanApp = app.trim();
-  const preview = envs.length && paths.length
-    ? buildAccessPolicy({ envs, level, paths })
-    : "";
-  const roleNames = cleanApp ? envs.map((e) => credNames(cleanApp, envIdent(e), level).role) : [];
+  let preview = "";
+  let previewError: string | null = null;
+  try {
+    if (envs.length && paths.length) preview = buildAccessPolicy({ envs, level, paths });
+  } catch (err) {
+    previewError = err instanceof Error ? err.message : "Invalid policy scope";
+  }
+  const roleEnvironments = cleanApp ? envs.map(envIdent) : [];
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -160,11 +163,11 @@ export function IssueCredentialDialog({
           </div>
         </Disclosure>
 
-        {roleNames.length ? (
+        {roleEnvironments.length ? (
           <div className="flex flex-col gap-1">
-            <Label>Will create {roleNames.length} AppRole{roleNames.length === 1 ? "" : "s"} (one per environment)</Label>
+            <Label>Will create {roleEnvironments.length} AppRole{roleEnvironments.length === 1 ? "" : "s"} (one per environment; unique names assigned when issued)</Label>
             <div className="flex flex-wrap gap-1.5">
-              {roleNames.map((r) => (
+              {roleEnvironments.map((r) => (
                 <span key={r} className="rounded-md border bg-muted/40 px-2 py-0.5 font-mono text-xs">{r}</span>
               ))}
             </div>
@@ -178,10 +181,10 @@ export function IssueCredentialDialog({
           </pre>
         </div>
 
-        {error ? <p className="text-sm text-destructive">{error}</p> : null}
+        {error || previewError ? <p className="text-sm text-destructive">{error || previewError}</p> : null}
         <div className="flex justify-end gap-2 border-t pt-4">
           <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-          <Button type="submit" disabled={issue.isPending}>
+          <Button type="submit" disabled={issue.isPending || !!previewError}>
             {issue.isPending ? "Issuing…" : "Issue credential"}
           </Button>
         </div>

@@ -1,27 +1,33 @@
 "use client";
 
-import { Box, Database, GitCompare, KeyRound, Lock, Network, Package, Pencil, Plus, ScrollText, Settings, Terminal, Trash2, Users } from "lucide-react";
+import { Box, Database, GitCompare, Lock, Network, Package, Plus, ScrollText, Settings, Terminal, Users } from "lucide-react";
 import Link from "next/link";
 import * as React from "react";
 
 import { ConfirmDialog } from "@/components/confirm-dialog";
-import { ColorDot, LabelEditor } from "@/components/label-editor";
+import { GrantAccessDialog } from "@/components/grant-access-dialog";
+import { IssueCredentialDialog } from "@/components/issue-credential-dialog";
+import { LabelEditor } from "@/components/label-editor";
+import { NewAppDialog } from "@/components/new-app-dialog";
 import { NewEnvironmentDialog } from "@/components/new-environment-dialog";
 import { PageHeader } from "@/components/page-header";
+import { AppsMatrix } from "@/components/secrets/apps-matrix";
+import { EnvironmentRail } from "@/components/secrets/environment-rail";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Disclosure } from "@/components/ui/disclosure";
 import { Skeleton } from "@/components/ui/skeleton";
 import { resolveEnvs, useAccessRoles } from "@/lib/access-roles";
 import { useCan } from "@/lib/acl";
+import { useAppCredentials } from "@/lib/app-credentials";
+import { useApps, useDeleteApp, useSeedAppInEnv, type AppInfo, type KvMount } from "@/lib/apps";
 import { useDisableSecretEngine, useMounts } from "@/lib/kv";
 import { labelKey, useClearLabel, useLabels } from "@/lib/labels";
 
-// engines with a dedicated dashboard / destination (clickable)
 const SUPPORTED = new Set([
   "kv", "generic", "transit", "pki", "ssh", "database", "cubbyhole", "identity", "system",
 ]);
 
-// some "engines" are managed in their own section rather than browsed
 function destinationFor(type: string, name: string) {
   if (type === "identity") return "/access/identity";
   if (type === "system") return "/operations";
@@ -30,9 +36,6 @@ function destinationFor(type: string, name: string) {
 
 function engineMeta(type: string) {
   switch (type) {
-    case "kv":
-    case "generic":
-      return { icon: KeyRound, blurb: "Key/value secrets" };
     case "transit":
       return { icon: Lock, blurb: "Encryption as a service" };
     case "pki":
@@ -55,204 +58,263 @@ function engineMeta(type: string) {
 export default function SecretsPage() {
   const { data: mounts, isLoading, isError } = useMounts();
   const { data: labels } = useLabels();
+  const { apps, isLoading: appsLoading, kvMounts } = useApps();
   const can = useCan();
   const accessRoles = useAccessRoles();
+  const appCreds = useAppCredentials();
   const disable = useDisableSecretEngine();
   const clearLabel = useClearLabel();
+  const seedEnv = useSeedAppInEnv();
+  const deleteApp = useDeleteApp();
 
-  // the mount path (with trailing slash) currently being customized
-  const [editing, setEditing] = React.useState<string | null>(null);
-  const [creating, setCreating] = React.useState(false);
-  // the mount path (with trailing slash) pending disable, + any error
-  const [deleting, setDeleting] = React.useState<string | null>(null);
-  const [deleteError, setDeleteError] = React.useState<string | null>(null);
+  const [editingEnv, setEditingEnv] = React.useState<string | null>(null);
+  const [creatingEnv, setCreatingEnv] = React.useState(false);
+  const [creatingApp, setCreatingApp] = React.useState(false);
+  const [editingApp, setEditingApp] = React.useState<string | null>(null);
+  const [issuing, setIssuing] = React.useState<string | null>(null);
+  const [granting, setGranting] = React.useState<string | null>(null);
+  const [deletingEnv, setDeletingEnv] = React.useState<string | null>(null);
+  const [deleteEnvError, setDeleteEnvError] = React.useState<string | null>(null);
+  const [deletingApp, setDeletingApp] = React.useState<AppInfo | null>(null);
+  const [deleteAppError, setDeleteAppError] = React.useState<string | null>(null);
+  const [seedError, setSeedError] = React.useState<string | null>(null);
 
-  // Scoped roles whose policy targets the environment pending disable — their
-  // grants would dangle at a deleted mount, so we surface them in the confirm.
+  const envName = (m: string) => labels?.[labelKey("environment", `${m}/`)]?.label || m;
+  const envColor = (m: string) => labels?.[labelKey("environment", `${m}/`)]?.color ?? null;
+
+  const kvEnvs = Object.entries(mounts ?? {})
+    .filter(([, info]) => info.type === "kv" || info.type === "generic")
+    .map(([path, info]) => {
+      const mount = path.replace(/\/$/, "");
+      const lbl = labels?.[labelKey("environment", path)];
+      return {
+        path,
+        mount,
+        type: info.type,
+        version: info.options?.version,
+        title: lbl?.label || path,
+        color: lbl?.color ?? null,
+      };
+    });
+
+  const otherEngines = Object.entries(mounts ?? {}).filter(
+    ([, info]) => info.type !== "kv" && info.type !== "generic",
+  );
+
   const affectedRoles = React.useMemo(() => {
-    if (!deleting) return [];
-    const m = deleting.replace(/\/$/, "");
+    if (!deletingEnv) return [];
+    const m = deletingEnv.replace(/\/$/, "");
     return (accessRoles.data ?? []).filter((r) =>
       resolveEnvs(r.env).some((t) => t.mount === m),
     );
-  }, [deleting, accessRoles.data, labels]);
+  }, [deletingEnv, accessRoles.data]);
 
-  // Deep-link from the onboarding "Create an environment" step (/secrets?new=1).
   React.useEffect(() => {
-    if (new URLSearchParams(window.location.search).get("new")) setCreating(true);
+    if (new URLSearchParams(window.location.search).get("new")) setCreatingEnv(true);
   }, []);
 
-  async function confirmDisable() {
-    if (!deleting) return;
-    setDeleteError(null);
+  async function confirmDisableEnv() {
+    if (!deletingEnv) return;
+    setDeleteEnvError(null);
     try {
-      await disable.mutateAsync(deleting.replace(/\/$/, ""));
-      await clearLabel.mutateAsync({ scope: "environment", ref: deleting }).catch(() => {});
-      setDeleting(null);
+      await disable.mutateAsync(deletingEnv.replace(/\/$/, ""));
+      await clearLabel.mutateAsync({ scope: "environment", ref: deletingEnv }).catch(() => {});
+      setDeletingEnv(null);
     } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : "Failed to disable");
+      setDeleteEnvError(err instanceof Error ? err.message : "Failed to disable");
+    }
+  }
+
+  async function confirmDeleteApp() {
+    if (!deletingApp) return;
+    setDeleteAppError(null);
+    try {
+      const present = kvMounts.filter((env) => deletingApp.envs.includes(env.mount));
+      await deleteApp.mutateAsync({ app: deletingApp.app, envs: present });
+      setDeletingApp(null);
+    } catch (err) {
+      setDeleteAppError(err instanceof Error ? err.message : "Failed to delete app");
+    }
+  }
+
+  async function seed(app: string, env: KvMount) {
+    setSeedError(null);
+    try {
+      await seedEnv.mutateAsync({ app, env });
+    } catch (err) {
+      setSeedError(err instanceof Error ? err.message : "Failed to add app to environment");
     }
   }
 
   return (
-    <div className="mx-auto max-w-5xl p-8">
+    <div className="mx-auto max-w-6xl p-4 md:p-8">
       <PageHeader
         title="Secrets"
-        description="Secret engines — your environments — mounted in this namespace."
-        className="mb-6"
+        description="Apps across KV environments. Other engines stay folded away."
+        className="mb-8"
         actions={
           <>
-            <Link href="/secrets/apps">
-              <Button variant="outline" size="sm">
-                <Package /> Apps
-              </Button>
+            <Link
+              href="/secrets/structure"
+              className={buttonVariants({ variant: "ghost", size: "sm" })}
+            >
+              <Network /> Structure
             </Link>
-            <Link href="/secrets/structure">
-              <Button variant="outline" size="sm">
-                <Network /> Structure
-              </Button>
+            <Link
+              href="/secrets/compare"
+              className={buttonVariants({ variant: "ghost", size: "sm" })}
+            >
+              <GitCompare /> Compare
             </Link>
-            <Link href="/secrets/compare">
-              <Button variant="outline" size="sm">
-                <GitCompare /> Compare
-              </Button>
+            <Link
+              href="/secrets/apps"
+              className={buttonVariants({ variant: "outline", size: "sm" })}
+            >
+              <Package /> Apps
             </Link>
-            {can("sys/mounts") ? (
-              <Button size="sm" onClick={() => setCreating(true)}>
-                <Plus /> New environment
-              </Button>
-            ) : null}
+            <Button size="sm" onClick={() => setCreatingApp(true)}>
+              <Plus /> New app
+            </Button>
           </>
         }
       />
 
       {isLoading ? (
-        <ul className="grid gap-3 sm:grid-cols-2">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <li key={i} className="flex items-start gap-3 rounded-xl border bg-card p-4 shadow-sm">
-              <Skeleton className="size-9 rounded-lg" />
-              <div className="flex-1 space-y-2 py-0.5">
-                <Skeleton className="h-4 w-24" />
-                <Skeleton className="h-3 w-40" />
-              </div>
-            </li>
-          ))}
-        </ul>
+        <div className="flex flex-col gap-8">
+          <div className="flex flex-wrap gap-2">
+            <Skeleton className="h-14 w-56 rounded-lg" />
+            <Skeleton className="h-14 w-56 rounded-lg" />
+          </div>
+          <Skeleton className="h-36 w-full rounded-xl" />
+        </div>
       ) : isError ? (
         <p className="text-sm text-destructive">
           Could not load mounts. Check your token&apos;s permissions.
         </p>
       ) : (
-        <ul className="grid gap-3 sm:grid-cols-2">
-          {Object.entries(mounts ?? {})
-            // surface KV "environments" ahead of system engines (cubbyhole/identity/sys)
-            .sort(([, a], [, b]) => {
-              const env = (t: string) => (t === "kv" || t === "generic" ? 0 : 1);
-              return env(a.type) - env(b.type);
-            })
-            .map(([path, info]) => {
-            const name = path.replace(/\/$/, "");
-            const supported = SUPPORTED.has(info.type);
-            const isEnv = info.type === "kv" || info.type === "generic";
-            const { icon: Icon, blurb } = engineMeta(info.type);
-            const version = info.options?.version;
-            const lbl = labels?.[labelKey("environment", path)];
-            const title = lbl?.label || path;
-            const inner = (
-              <div className="flex h-full items-start gap-3 rounded-xl border bg-card p-4 shadow-sm transition-all duration-150 group-hover:-translate-y-0.5 group-hover:border-primary/30 group-hover:shadow-md">
-                <div className="flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                  <Icon className="size-4" />
-                </div>
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    {lbl?.color ? (
-                      <ColorDot color={lbl.color} className="size-2.5 shrink-0" />
-                    ) : null}
-                    <span className={lbl?.label ? "font-medium" : "font-mono font-medium"}>
-                      {title}
-                    </span>
-                    <Badge variant="muted">
-                      {info.type}
-                      {version ? ` v${version}` : ""}
-                    </Badge>
-                  </div>
-                  <p className="truncate text-sm text-muted-foreground">
-                    {lbl?.label ? (
-                      <span className="font-mono">{path}</span>
-                    ) : (
-                      lbl?.description || info.description || blurb
-                    )}
-                  </p>
-                  {!supported ? (
-                    <span className="text-xs text-muted-foreground/70">
-                      UI coming soon
-                    </span>
-                  ) : null}
-                </div>
-              </div>
-            );
-            return (
-              <li key={path} className="group/card relative">
-                {supported ? (
-                  <Link href={destinationFor(info.type, name)} className="group block">
-                    {inner}
-                  </Link>
-                ) : (
-                  <div className="opacity-60">{inner}</div>
-                )}
-                {isEnv ? (
-                  <div className="absolute right-2 top-2 flex gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover/card:opacity-100">
-                    <button
-                      type="button"
-                      onClick={() => setEditing(path)}
-                      title="Customize display"
-                      aria-label={`Customize ${path}`}
-                      className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
-                    >
-                      <Pencil className="size-3.5" />
-                    </button>
-                    {can("sys/mounts") ? (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setDeleteError(null);
-                          setDeleting(path);
-                        }}
-                        title="Disable environment"
-                        aria-label={`Disable ${path}`}
-                        className="rounded-md p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                      >
-                        <Trash2 className="size-3.5" />
-                      </button>
-                    ) : null}
-                  </div>
-                ) : null}
-              </li>
-            );
-          })}
-        </ul>
+        <div className="flex flex-col gap-6">
+          <EnvironmentRail
+            envs={kvEnvs}
+            canManage={can("sys/mounts")}
+            onCreate={() => setCreatingEnv(true)}
+            onEdit={setEditingEnv}
+            onDelete={(path) => {
+              setDeleteEnvError(null);
+              setDeletingEnv(path);
+            }}
+          />
+
+          <section>
+            <div className="mb-3">
+              <h2 className="text-base font-semibold tracking-tight">Apps</h2>
+              <p className="mt-0.5 text-sm text-muted-foreground">
+                Open a cell to browse, or add the app where it is missing.
+              </p>
+            </div>
+            {seedError ? <p className="mb-3 text-sm text-destructive">{seedError}</p> : null}
+            {appsLoading ? (
+              <Skeleton className="h-40 w-full rounded-xl" />
+            ) : (
+              <AppsMatrix
+                apps={apps}
+                kvMounts={kvMounts}
+                envName={envName}
+                envColor={envColor}
+                seeding={seedEnv.isPending}
+                onCreate={() => setCreatingApp(true)}
+                onEdit={setEditingApp}
+                onDelete={(app) => {
+                  setDeleteAppError(null);
+                  setDeletingApp(app);
+                }}
+                onSeed={seed}
+                onIssue={setIssuing}
+                onGrant={setGranting}
+              />
+            )}
+          </section>
+
+          {otherEngines.length ? (
+            <Disclosure label="Other secret engines" count={otherEngines.length}>
+              <ul className="divide-y">
+                {otherEngines.map(([path, info]) => {
+                  const name = path.replace(/\/$/, "");
+                  const supported = SUPPORTED.has(info.type);
+                  const { icon: Icon, blurb } = engineMeta(info.type);
+                  const row = (
+                    <div className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0">
+                      <Icon className="size-4 shrink-0 text-muted-foreground" />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-mono text-sm font-medium">{path}</span>
+                          <Badge variant="muted">{info.type}</Badge>
+                        </div>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {info.description || blurb}
+                          {!supported ? " · UI coming soon" : ""}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                  return (
+                    <li key={path}>
+                      {supported ? (
+                        <Link
+                          href={destinationFor(info.type, name)}
+                          className="block rounded-md px-1 -mx-1 transition-colors duration-150 hover:bg-accent"
+                        >
+                          {row}
+                        </Link>
+                      ) : (
+                        <div className="opacity-60">{row}</div>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            </Disclosure>
+          ) : null}
+        </div>
       )}
 
-      {editing ? (
+      {editingEnv ? (
         <LabelEditor
           open
-          onClose={() => setEditing(null)}
+          onClose={() => setEditingEnv(null)}
           scope="environment"
-          refPath={editing}
-          current={labels?.[labelKey("environment", editing)]}
-          nativeName={editing}
+          refPath={editingEnv}
+          current={labels?.[labelKey("environment", editingEnv)]}
+          nativeName={editingEnv}
         />
       ) : null}
 
-      {creating ? <NewEnvironmentDialog onClose={() => setCreating(false)} /> : null}
+      {editingApp ? (
+        <LabelEditor
+          open
+          onClose={() => setEditingApp(null)}
+          scope="application"
+          refPath={editingApp}
+          current={labels?.[labelKey("application", editingApp)]}
+          nativeName={editingApp}
+        />
+      ) : null}
+
+      {creatingEnv ? <NewEnvironmentDialog onClose={() => setCreatingEnv(false)} /> : null}
+      {creatingApp ? <NewAppDialog onClose={() => setCreatingApp(false)} /> : null}
+      {issuing ? (
+        <IssueCredentialDialog existing={appCreds.data ?? []} initialApp={issuing} onClose={() => setIssuing(null)} />
+      ) : null}
+      {granting ? (
+        <GrantAccessDialog existing={accessRoles.data ?? []} initialApp={granting} onClose={() => setGranting(null)} />
+      ) : null}
 
       <ConfirmDialog
-        open={!!deleting}
-        onClose={() => setDeleting(null)}
-        onConfirm={confirmDisable}
+        open={!!deletingEnv}
+        onClose={() => setDeletingEnv(null)}
+        onConfirm={confirmDisableEnv}
         title="Disable environment"
-        description={`This permanently deletes the "${deleting?.replace(/\/$/, "")}" engine and ALL secrets stored in it. This cannot be undone.`}
-        confirmText={deleting?.replace(/\/$/, "")}
+        description={`This permanently deletes the "${deletingEnv?.replace(/\/$/, "")}" engine and ALL secrets stored in it. This cannot be undone.`}
+        confirmText={deletingEnv?.replace(/\/$/, "")}
         confirmLabel="Disable environment"
         pending={disable.isPending || clearLabel.isPending}
         warning={
@@ -265,7 +327,23 @@ export default function SecretsPage() {
             </>
           ) : null
         }
-        error={deleteError}
+        error={deleteEnvError}
+      />
+
+      <ConfirmDialog
+        open={!!deletingApp}
+        onClose={() => setDeletingApp(null)}
+        onConfirm={confirmDeleteApp}
+        title="Delete app"
+        description={`Permanently deletes every secret under "${deletingApp?.app}/" in ${
+          deletingApp?.envs.length
+            ? deletingApp.envs.map(envName).join(", ")
+            : "no environments"
+        }, then unregisters the app.`}
+        confirmText={deletingApp?.app}
+        confirmLabel="Delete app"
+        pending={deleteApp.isPending}
+        error={deleteAppError}
       />
     </div>
   );

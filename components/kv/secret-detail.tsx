@@ -8,6 +8,7 @@ import {
   EditorHandle,
   KvKeyValueEditor,
   KvValueViewer,
+  snapshotKvDraft,
 } from "@/components/kv/kv-fields";
 import { Button } from "@/components/ui/button";
 import { Disclosure } from "@/components/ui/disclosure";
@@ -20,6 +21,7 @@ import {
   useKvVersionAction,
   useKvWrite,
 } from "@/lib/kv";
+import { useNamespace } from "@/lib/namespace";
 import { cn } from "@/lib/utils";
 
 const errMsg = (e: unknown) =>
@@ -41,19 +43,25 @@ export function SecretDetail({
   onDeleted: () => void;
 }) {
   // v1 mounts have no versioning — treat unknown (loading) as v2.
+  const { namespace } = useNamespace();
   const isV2 = useKvIsV2(mount) !== false;
   const meta = useKvMetadata(mount, secretPath);
   const [version, setVersion] = React.useState<number | undefined>(undefined);
   const [editing, setEditing] = React.useState(false);
+  const [draft, setDraft] = React.useState<{
+    data: Record<string, unknown>;
+    cas: number;
+  } | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const editorRef = React.useRef<EditorHandle>(null);
 
-  // reset transient state when switching secrets
+  // reset transient state when switching secrets or namespaces
   React.useEffect(() => {
     setVersion(undefined);
     setEditing(false);
     setError(null);
-  }, [mount, secretPath]);
+    setDraft(null);
+  }, [namespace, mount, secretPath]);
 
   const currentVersion = meta.data?.current_version;
   const viewing = version ?? currentVersion;
@@ -88,6 +96,7 @@ export function SecretDetail({
     .sort((a, b) => b.version - a.version);
 
   async function save() {
+    if (!draft) return;
     setError(null);
     let data: Record<string, unknown>;
     try {
@@ -97,12 +106,21 @@ export function SecretDetail({
       return;
     }
     try {
-      await write.mutateAsync({ data, cas: currentVersion });
+      await write.mutateAsync({ data, cas: draft.cas });
       setEditing(false);
+      setDraft(null);
       setVersion(undefined);
     } catch (e) {
       setError(errMsg(e));
     }
+  }
+
+  function beginEditing() {
+    if (!secret.data?.data || secret.isError || currentVersion == null) return;
+    setError(null);
+    const snapshot = snapshotKvDraft(secret.data.data, currentVersion);
+    setDraft({ data: snapshot.data, cas: snapshot.cas! });
+    setEditing(true);
   }
 
   async function restore() {
@@ -125,8 +143,8 @@ export function SecretDetail({
             {isCurrent ? `version ${viewing}` : `viewing v${viewing} · current v${currentVersion}`}
           </div>
         </div>
-        {!editing && isCurrent && !isDeleted && !isDestroyed ? (
-          <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
+        {!editing && isCurrent && !isDeleted && !isDestroyed && secret.isSuccess && secret.data?.data ? (
+          <Button size="sm" variant="outline" onClick={beginEditing}>
             <Pencil /> Edit
           </Button>
         ) : null}
@@ -153,11 +171,11 @@ export function SecretDetail({
           ) : null}
 
           {/* --- the simple default: the values --- */}
-          {editing ? (
+          {editing && draft ? (
             <>
               <KvKeyValueEditor
                 ref={editorRef}
-                initial={secret.data?.data ?? {}}
+                initial={draft.data}
               />
               <div className="mt-4 flex gap-2">
                 <Button onClick={save} disabled={write.isPending}>
@@ -167,6 +185,7 @@ export function SecretDetail({
                   variant="outline"
                   onClick={() => {
                     setEditing(false);
+                    setDraft(null);
                     setError(null);
                   }}
                 >
@@ -189,6 +208,15 @@ export function SecretDetail({
                 onClick={() => undelete.mutate([viewing!])}
               >
                 Undelete
+              </Button>
+            </div>
+          ) : secret.isLoading ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">Loading secret data…</p>
+          ) : secret.isError ? (
+            <div className="py-6 text-center text-sm text-destructive">
+              <p>{errMsg(secret.error)}</p>
+              <Button className="mt-3" size="sm" variant="outline" onClick={() => secret.refetch()}>
+                Retry
               </Button>
             </div>
           ) : (
