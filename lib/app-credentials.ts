@@ -153,6 +153,7 @@ export function useIssueAppCredential() {
       }));
       await ensureApprole(mount, namespace);
       for (const names of planned) await assertCredentialNamesAvailable(names, mount, namespace);
+      await save(vars.existing);
 
       const issued: IssuedCred[] = [];
       const roles: AppCredential["roles"] = [];
@@ -193,7 +194,12 @@ export function useIssueAppCredential() {
         roles,
         createdAt: Date.now(),
       };
-      await save([...vars.existing, definition]);
+      try {
+        await save([...vars.existing, definition]);
+      } catch (err) {
+        await deleteCredentialResources(definition, namespace);
+        throw err;
+      }
       return { definition, issued };
     },
     onSuccess: () => {

@@ -17,6 +17,7 @@ import {
   addDomain,
   displayTeamRole,
   planGoogleOidcRoles,
+  safeAuthMount,
   teamPolicyWrite,
   type DomainRoleRow,
 } from "@/lib/oidc-domains";
@@ -79,7 +80,11 @@ export function GoogleOidcWizard({
       setError("Client ID and secret are required");
       return;
     }
-    const m = mount.trim().replace(/\/$/, "") || "oidc";
+    const m = safeAuthMount(mount);
+    if (!m) {
+      setError("Invalid auth mount path");
+      return;
+    }
     let plan;
     try {
       plan = planGoogleOidcRoles({

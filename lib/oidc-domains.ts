@@ -184,6 +184,13 @@ export function resolveOidcStartRole(opts: {
   email?: string;
   role?: string;
 }): { role?: string; hd?: string } | { error: string } {
+  if (opts.spec) {
+    const specMount = safeAuthMount(opts.spec.mount);
+    if (!specMount) return { error: "Sign-in is misconfigured." };
+    if (specMount !== opts.mount) {
+      return { role: opts.role };
+    }
+  }
   const spec =
     opts.spec && safeAuthMount(opts.spec.mount) === opts.mount ? opts.spec : undefined;
   if (opts.email) {

@@ -3,6 +3,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as React from "react";
 
+import { API_BASE } from "@/lib/base-path";
+import { deleteCredentialResources, type AppCredential } from "@/lib/app-credentials";
 import { baoFetch, BaoError } from "@/lib/bao-client";
 import { useMounts } from "@/lib/kv";
 import { labelKey, useClearLabel, useLabels, useSetLabel, type Label } from "@/lib/labels";
@@ -212,6 +214,31 @@ export function useDeleteApp() {
   return useMutation({
     meta: { success: "App deleted", silentError: true },
     mutationFn: async (vars: { app: string; envs: KvMount[] }) => {
+      const credRes = await fetch(`${API_BASE}/app-credentials`, {
+        headers: { "x-vault-namespace": namespace },
+      });
+      if (!credRes.ok) {
+        throw new Error("Could not list app credentials; the app was not deleted.");
+      }
+      const data = (await credRes.json()) as { creds?: AppCredential[] };
+      const mine = (data.creds ?? []).filter((c) => c.app === vars.app);
+      for (const cred of mine) {
+        await deleteCredentialResources(cred, namespace);
+      }
+      if (mine.length) {
+        const keep = (data.creds ?? []).filter((c) => c.app !== vars.app);
+        const save = await fetch(`${API_BASE}/app-credentials`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            "x-vault-namespace": namespace,
+          },
+          body: JSON.stringify({ creds: keep }),
+        });
+        if (!save.ok) {
+          throw new Error("Could not revoke credentials; the app was not deleted.");
+        }
+      }
       await deleteAppTrees(vars.app, vars.envs, namespace);
       await clearLabel.mutateAsync({ scope: "application", ref: vars.app });
     },

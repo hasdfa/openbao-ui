@@ -277,6 +277,16 @@ describe("safeAuthMount / resolveOidcStartRole", () => {
       resolveOidcStartRole({ spec, mount: "oidc", email: "ada@acme.com" }),
     ).toEqual({ role: "default-acme-com", hd: "acme.com" });
   });
+
+  it("fails closed when the stored mount cannot be normalized", () => {
+    expect(
+      resolveOidcStartRole({
+        spec: { mount: "oidc%", roles: [{ domain: "acme.com", role: "default" }] },
+        mount: "oidc",
+        role: "default",
+      }),
+    ).toEqual({ error: "Sign-in is misconfigured." });
+  });
 });
 
 describe("withGoogleHostedDomain / emailDomain", () => {
