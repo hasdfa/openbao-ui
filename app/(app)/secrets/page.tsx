@@ -193,20 +193,9 @@ export default function SecretsPage() {
         </p>
       ) : (
         <div className="flex flex-col gap-6">
-          <EnvironmentRail
-            envs={kvEnvs}
-            canManage={can("sys/mounts")}
-            onCreate={() => setCreatingEnv(true)}
-            onEdit={setEditingEnv}
-            onDelete={(path) => {
-              setDeleteEnvError(null);
-              setDeletingEnv(path);
-            }}
-          />
-
           <section>
             <div className="mb-3">
-              <h2 className="text-base font-semibold tracking-tight">Apps</h2>
+              <h2 className="text-base font-semibold tracking-tight">Projects</h2>
               <p className="mt-0.5 text-sm text-muted-foreground">
                 Open a cell to browse, or add the project where it is missing.
               </p>
@@ -233,6 +222,26 @@ export default function SecretsPage() {
               />
             )}
           </section>
+
+          {/* Environments are the mounts projects live in — needed to set up,
+              rarely while working. Open by default until a project exists, so
+              first-run still surfaces "New environment". */}
+          <Disclosure
+            label="Environments"
+            count={kvEnvs.length}
+            defaultOpen={projects.length === 0}
+          >
+            <EnvironmentRail
+              envs={kvEnvs}
+              canManage={can("sys/mounts")}
+              onCreate={() => setCreatingEnv(true)}
+              onEdit={setEditingEnv}
+              onDelete={(path) => {
+                setDeleteEnvError(null);
+                setDeletingEnv(path);
+              }}
+            />
+          </Disclosure>
 
           {otherEngines.length ? (
             <Disclosure label="Other secret engines" count={otherEngines.length}>

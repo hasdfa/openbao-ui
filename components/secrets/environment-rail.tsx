@@ -36,13 +36,12 @@ export function EnvironmentRail({
 }) {
   return (
     <section>
-      <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h2 className="text-base font-semibold tracking-tight">Environments</h2>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            KV mounts. Apps are folders inside them.
-          </p>
-        </div>
+      {/* The heading lives on the Disclosure that wraps this, so only the
+          one-line reminder of what a mount is stays here. */}
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-muted-foreground">
+          KV mounts. Projects are folders inside them.
+        </p>
         {canManage ? (
           <Button size="sm" onClick={onCreate}>
             <Plus /> New environment
@@ -51,7 +50,7 @@ export function EnvironmentRail({
       </div>
       {envs.length === 0 ? (
         <p className="rounded-lg border border-dashed px-4 py-6 text-sm text-muted-foreground">
-          No environments yet. Create one to start grouping app secrets.
+          No environments yet. Create one to start grouping project secrets.
         </p>
       ) : (
         <ul className="flex flex-wrap gap-2">
