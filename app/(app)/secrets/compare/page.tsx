@@ -39,6 +39,22 @@ export default function ComparePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mounts.data]);
 
+  // Arriving from the browser's "Compare" button: the path is already known, so
+  // prefill it and run once the engine list is in — no retyping the path.
+  // Read after commit: on a client-side navigation the new URL isn't in
+  // window.location yet during the first render.
+  const [prefilled, setPrefilled] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    setPrefilled(new URLSearchParams(window.location.search).get("path") ?? "");
+  }, []);
+  const [autoRan, setAutoRan] = React.useState(false);
+  React.useEffect(() => {
+    if (!prefilled || autoRan || selected.length === 0) return;
+    setAutoRan(true);
+    setPath(prefilled);
+    setQuery({ mounts: selected, path: prefilled });
+  }, [prefilled, autoRan, selected]);
+
   const compare = useQuery({
     queryKey: ["kv-compare", namespace, query?.mounts, query?.path],
     enabled: !!query,
@@ -115,7 +131,7 @@ export default function ComparePage() {
                   selected.includes(m) ? "border-primary bg-accent" : "text-muted-foreground",
                 )}
               >
-                <input type="checkbox" checked={selected.includes(m)} onChange={() => toggleMount(m)} />
+                <input type="checkbox" className="accent-[var(--color-primary)]" checked={selected.includes(m)} onChange={() => toggleMount(m)} />
                 <span title={m} className={labels?.[labelKey("environment", `${m}/`)]?.label ? "font-medium" : "font-mono"}>
                   {envName(m)}
                 </span>

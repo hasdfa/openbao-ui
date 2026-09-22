@@ -54,8 +54,9 @@ test("kv lifecycle: create, view, delete a secret", async ({ page }) => {
   await page.locator("#confirm-input").fill("delete");
   await page.getByRole("button", { name: "Delete everything" }).click();
 
-  // detail panel clears
-  await expect(page.getByText("No secret selected")).toBeVisible();
+  // detail panel clears and the list expands back to full width
+  await expect(page.getByRole("button", { name: "Edit" })).toHaveCount(0);
+  await expect(page.getByText("version 1")).toHaveCount(0);
 });
 
 test("kv: deep-link straight to a secret resolves (no 404)", async ({ page }) => {
@@ -78,7 +79,7 @@ test("kv: deep-link straight to a secret resolves (no 404)", async ({ page }) =>
   // folder and auto-selects the leaf instead of 404-ing on it
   await page.goto(`/ui2/secrets/secret/${name}`);
   await expect(page.getByText("Request failed (404)")).toHaveCount(0);
-  await expect(page.getByText(name)).toBeVisible();
+  await expect(page.getByText(name, { exact: true })).toBeVisible();
   await expect(page.getByText("version 1")).toBeVisible();
 });
 

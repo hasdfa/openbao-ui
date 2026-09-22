@@ -118,7 +118,9 @@ const server = http.createServer(async (req, res) => {
 
     if (op === "metadata") {
       if (url.searchParams.get("list") === "true" || req.method === "LIST") {
-        return send(res, 200, { data: { keys: listKeys(key) } });
+        const ks = listKeys(key);
+        if (key && ks.length === 0) return errors(res, 404, "not found");
+        return send(res, 200, { data: { keys: ks } });
       }
       if (req.method === "DELETE") {
         kv.delete(key);

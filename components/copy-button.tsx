@@ -8,9 +8,12 @@ import { Button } from "@/components/ui/button";
 export function CopyButton({
   value,
   label,
+  className,
 }: {
   value: string;
   label?: string;
+  /** Size overrides for tight contexts, e.g. beside small mono text. */
+  className?: string;
 }) {
   const [copied, setCopied] = React.useState(false);
 
@@ -28,6 +31,7 @@ export function CopyButton({
     <Button
       variant="ghost"
       size={label ? "sm" : "icon"}
+      className={className}
       onClick={copy}
       title="Copy"
     >
