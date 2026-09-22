@@ -15,7 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAccessRoles } from "@/lib/access-roles";
-import { useAppCredentials } from "@/lib/app-credentials";
+import { useProjectCredentials } from "@/lib/project-credentials";
 import { useApps, useDeleteApp, type AppInfo } from "@/lib/apps";
 import { labelKey, useLabels } from "@/lib/labels";
 import { cn } from "@/lib/utils";
@@ -24,7 +24,7 @@ export default function AppsPage() {
   const { apps, isLoading, kvMounts } = useApps();
   const { data: labels } = useLabels();
   const accessRoles = useAccessRoles();
-  const appCreds = useAppCredentials();
+  const appCreds = useProjectCredentials();
   const remove = useDeleteApp();
   const envName = (m: string) => labels?.[labelKey("environment", `${m}/`)]?.label || m;
 

@@ -13,7 +13,7 @@ vi.mock("@/lib/db", () => ({ getConfig: mocks.read, listLabels: mocks.read, setC
 import { OpenBaoRequestError } from "@/lib/openbao";
 import * as labels from "@/app/api/labels/route";
 import * as roles from "@/app/api/access-roles/route";
-import * as credentials from "@/app/api/app-credentials/route";
+import * as credentials from "@/app/api/project-credentials/route";
 import * as templates from "@/app/api/role-templates/route";
 import * as onboarding from "@/app/api/onboarding/route";
 

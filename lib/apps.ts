@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as React from "react";
 
 import { API_BASE } from "@/lib/base-path";
-import { deleteCredentialResources, type AppCredential } from "@/lib/app-credentials";
+import { deleteCredentialResources, type ProjectCredential } from "@/lib/project-credentials";
 import { baoFetch, BaoError } from "@/lib/bao-client";
 import { useMounts } from "@/lib/kv";
 import { labelKey, useClearLabel, useLabels, useSetLabel, type Label } from "@/lib/labels";
@@ -217,20 +217,20 @@ export function useDeleteApp() {
   return useMutation({
     meta: { success: "App deleted", silentError: true },
     mutationFn: async (vars: { app: string; envs: KvMount[] }) => {
-      const credRes = await fetch(`${API_BASE}/app-credentials`, {
+      const credRes = await fetch(`${API_BASE}/project-credentials`, {
         headers: { "x-vault-namespace": namespace },
       });
       if (!credRes.ok) {
         throw new Error("Could not list app credentials; the app was not deleted.");
       }
-      const data = (await credRes.json()) as { creds?: AppCredential[] };
-      const mine = (data.creds ?? []).filter((c) => c.app === vars.app);
+      const data = (await credRes.json()) as { creds?: ProjectCredential[] };
+      const mine = (data.creds ?? []).filter((c) => c.project === vars.app);
       for (const cred of mine) {
         await deleteCredentialResources(cred, namespace);
       }
       if (mine.length) {
-        const keep = (data.creds ?? []).filter((c) => c.app !== vars.app);
-        const save = await fetch(`${API_BASE}/app-credentials`, {
+        const keep = (data.creds ?? []).filter((c) => c.project !== vars.app);
+        const save = await fetch(`${API_BASE}/project-credentials`, {
           method: "PUT",
           headers: {
             "Content-Type": "application/json",

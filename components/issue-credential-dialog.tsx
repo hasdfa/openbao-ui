@@ -14,10 +14,10 @@ import { Label } from "@/components/ui/label";
 import { buildAccessPolicy, type AccessLevel } from "@/lib/access-policy";
 import {
   envIdent,
-  useIssueAppCredential,
-  type AppCredential,
+  useIssueProjectCredential,
+  type ProjectCredential,
   type IssuedCred,
-} from "@/lib/app-credentials";
+} from "@/lib/project-credentials";
 import { resolveEnvs, type EnvSelector } from "@/lib/access-roles";
 import { buildSnippets } from "@/lib/guides";
 
@@ -34,12 +34,12 @@ export function IssueCredentialDialog({
   initialPaths,
   onClose,
 }: {
-  existing: AppCredential[];
+  existing: ProjectCredential[];
   initialApp?: string;
   initialPaths?: string[];
   onClose: () => void;
 }) {
-  const issue = useIssueAppCredential();
+  const issue = useIssueProjectCredential();
 
   const [app, setApp] = React.useState(initialApp ?? "");
   const [level, setLevel] = React.useState<AccessLevel>("viewer");
@@ -79,7 +79,7 @@ export function IssueCredentialDialog({
       return;
     }
     try {
-      const res = await issue.mutateAsync({ app: cleanApp, env, level, mount, ttl, paths, existing });
+      const res = await issue.mutateAsync({ project: cleanApp, env, level, mount, ttl, paths, existing });
       setIssued(res.issued);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to issue credential");

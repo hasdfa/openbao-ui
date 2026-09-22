@@ -19,7 +19,7 @@ import { Disclosure } from "@/components/ui/disclosure";
 import { Skeleton } from "@/components/ui/skeleton";
 import { resolveEnvs, useAccessRoles } from "@/lib/access-roles";
 import { useCan } from "@/lib/acl";
-import { useAppCredentials } from "@/lib/app-credentials";
+import { useProjectCredentials } from "@/lib/project-credentials";
 import { useApps, useDeleteApp, useSeedAppInEnv, type AppInfo, type KvMount } from "@/lib/apps";
 import { useDisableSecretEngine, useMounts } from "@/lib/kv";
 import { labelKey, useClearLabel, useLabels } from "@/lib/labels";
@@ -61,7 +61,7 @@ export default function SecretsPage() {
   const { apps, isLoading: appsLoading, kvMounts } = useApps();
   const can = useCan();
   const accessRoles = useAccessRoles();
-  const appCreds = useAppCredentials();
+  const appCreds = useProjectCredentials();
   const disable = useDisableSecretEngine();
   const clearLabel = useClearLabel();
   const seedEnv = useSeedAppInEnv();
