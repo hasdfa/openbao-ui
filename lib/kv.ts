@@ -2,11 +2,12 @@
 
 import {
   useMutation,
+  useQueries,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
 
-import { baoFetch } from "@/lib/bao-client";
+import { BaoError, baoFetch } from "@/lib/bao-client";
 import { useNamespace } from "@/lib/namespace";
 
 // --- response shapes (subset we use) ---
@@ -166,6 +167,54 @@ export function useKvList(mount: string, path: string) {
   });
 }
 
+/**
+ * List the same path in several *other* mounts at once, so a browser can show
+ * which environments hold a given folder or key. Shares the `kv-list` cache
+ * with `useKvList`, so switching environment is already warm.
+ */
+export function useKvListAcross(
+  mounts: { mount: string; v2: boolean }[],
+  path: string,
+) {
+  const { namespace } = useNamespace();
+  const p = stripSlash(path);
+  return useQueries({
+    queries: mounts.map(({ mount, v2 }) => {
+      const m = stripSlash(mount);
+      return {
+        queryKey: ["kv-list", namespace, m, p, v2],
+        staleTime: 30_000,
+        queryFn: async () => {
+          const res = await baoFetch<{ data: { keys: string[] } }>({
+            path: v2 ? `${m}/metadata/${p}` : `${m}/${p}`,
+            namespace,
+            list: true,
+          });
+          return res.data?.keys ?? [];
+        },
+      };
+    }),
+    combine: (results) => {
+      const byMount: Record<
+        string,
+        { keys: Set<string>; loading: boolean; reachable: boolean }
+      > = {};
+      mounts.forEach(({ mount }, i) => {
+        const r = results[i];
+        byMount[mount] = {
+          keys: new Set(r.data ?? []),
+          loading: r.isLoading,
+          // a 404 means "path not here", any other failure means "can't tell"
+          reachable:
+            r.isSuccess ||
+            (r.error instanceof BaoError && r.error.status === 404),
+        };
+      });
+      return byMount;
+    },
+  });
+}
+
 /** Read a secret (optionally a specific version). */
 export function useKvSecret(mount: string, path: string, version?: number) {
   const { namespace } = useNamespace();
@@ -203,15 +252,22 @@ export function useKvSecret(mount: string, path: string, version?: number) {
   });
 }
 
-/** Version history + metadata for a secret. */
-export function useKvMetadata(mount: string, path: string) {
+/**
+ * Version history + metadata for a secret. Pass `enabled: false` to hold the
+ * request back — list rows use that to fetch only once they scroll into view.
+ */
+export function useKvMetadata(
+  mount: string,
+  path: string,
+  opts?: { enabled?: boolean },
+) {
   const { namespace } = useNamespace();
   const v2 = useKvIsV2(mount);
   const m = stripSlash(mount);
   const p = stripSlash(path);
   return useQuery({
     queryKey: ["kv-metadata", namespace, m, p, v2],
-    enabled: !!p && v2 !== undefined,
+    enabled: !!p && v2 !== undefined && (opts?.enabled ?? true),
     queryFn: async () => {
       if (v2) {
         const res = await baoFetch<{ data: KvMetadata }>({
@@ -234,6 +290,58 @@ export function useKvMetadata(mount: string, path: string) {
           "1": { created_time: "", deletion_time: "", destroyed: false },
         },
       } as KvMetadata;
+    },
+  });
+}
+
+export type KvRowMeta = { version: number; updated: string | null };
+
+/** How many secrets a listing will fetch row metadata for before giving up. */
+export const KV_ROW_META_LIMIT = 100;
+
+/**
+ * Current version + last-write time for a batch of secrets, so a listing can
+ * answer "when was this last rotated?" without opening each one. Shares the
+ * `kv-metadata` cache, so opening a row afterwards is instant. v2 only — v1
+ * mounts keep no metadata.
+ */
+export function useKvRowMeta(mount: string, paths: string[], enabled: boolean) {
+  const { namespace } = useNamespace();
+  const v2 = useKvIsV2(mount);
+  const m = stripSlash(mount);
+  const active = enabled && v2 === true && paths.length <= KV_ROW_META_LIMIT;
+  return useQueries({
+    queries: paths.map((path) => {
+      const p = stripSlash(path);
+      return {
+        queryKey: ["kv-metadata", namespace, m, p, v2],
+        enabled: active,
+        staleTime: 30_000,
+        queryFn: async () => {
+          const res = await baoFetch<{ data: KvMetadata }>({
+            path: `${m}/metadata/${p}`,
+            namespace,
+          });
+          return res.data;
+        },
+      };
+    }),
+    combine: (results) => {
+      const meta: Record<string, KvRowMeta> = {};
+      paths.forEach((path, i) => {
+        const d = results[i].data;
+        if (d) {
+          meta[path] = {
+            version: d.current_version,
+            updated: d.updated_time || d.created_time || null,
+          };
+        }
+      });
+      return {
+        meta,
+        loading: active && results.some((r) => r.isLoading),
+        available: active,
+      };
     },
   });
 }
@@ -311,6 +419,49 @@ export function useKvVersionAction(
         body: { versions },
       }),
     onSuccess: invalidate,
+  });
+}
+
+/**
+ * Permanently delete several secrets in one mount. Sequential on purpose — a
+ * burst of parallel deletes against a secrets backend is worth avoiding, and
+ * the failures need to be named individually. Callers must typed-confirm first.
+ */
+export function useKvBulkDelete(mount: string) {
+  const qc = useQueryClient();
+  const { namespace } = useNamespace();
+  const v2 = useKvIsV2(mount);
+  const m = stripSlash(mount);
+  return useMutation({
+    meta: { silentError: true },
+    mutationFn: async (paths: string[]) => {
+      const failed: string[] = [];
+      for (const raw of paths) {
+        const p = stripSlash(raw);
+        try {
+          await baoFetch({
+            path: v2 === false ? `${m}/${p}` : `${m}/metadata/${p}`,
+            method: "DELETE",
+            namespace,
+          });
+        } catch (err) {
+          // already gone counts as done
+          if (err instanceof BaoError && err.status === 404) continue;
+          failed.push(p);
+        }
+      }
+      if (failed.length) {
+        throw new Error(
+          `Deleted ${paths.length - failed.length} of ${paths.length}. Still present: ${failed.join(", ")}`,
+        );
+      }
+      return paths.length;
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ["kv-list", namespace, m] });
+      qc.invalidateQueries({ queryKey: ["kv-metadata", namespace, m] });
+      qc.invalidateQueries({ queryKey: ["kv-secret", namespace, m] });
+    },
   });
 }
 

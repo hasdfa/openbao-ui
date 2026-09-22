@@ -37,10 +37,13 @@ export function SecretDetail({
   mount,
   secretPath,
   onDeleted,
+  actions,
 }: {
   mount: string;
   secretPath: string;
   onDeleted: () => void;
+  /** Extra controls beside Edit, e.g. a cross-environment compare link. */
+  actions?: React.ReactNode;
 }) {
   // v1 mounts have no versioning — treat unknown (loading) as v2.
   const { namespace } = useNamespace();
@@ -143,11 +146,14 @@ export function SecretDetail({
             {isCurrent ? `version ${viewing}` : `viewing v${viewing} · current v${currentVersion}`}
           </div>
         </div>
-        {!editing && isCurrent && !isDeleted && !isDestroyed && secret.isSuccess && secret.data?.data ? (
-          <Button size="sm" variant="outline" onClick={beginEditing}>
-            <Pencil /> Edit
-          </Button>
-        ) : null}
+        <div className="flex shrink-0 items-center gap-1">
+          {!editing ? actions : null}
+          {!editing && isCurrent && !isDeleted && !isDestroyed && secret.isSuccess && secret.data?.data ? (
+            <Button size="sm" variant="outline" onClick={beginEditing}>
+              <Pencil /> Edit
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       <div className="min-w-0 flex-1 overflow-auto p-4">
