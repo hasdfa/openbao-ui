@@ -213,9 +213,21 @@ export function KvScopeBar({
       {/* One quiet reference line: the literal path OpenBao will enforce, and
           that same path in every environment. */}
       <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
+        {/* Also the way back up: the chips above switch scope, these walk it.
+            Without this the mount root has no affordance at all. */}
         <span className="flex min-w-0 items-center gap-0.5">
-          <span className="truncate font-mono text-xs text-muted-foreground">
-            {fullPath}
+          <span className="flex min-w-0 items-center truncate font-mono text-xs text-muted-foreground">
+            {[mount, ...segments].map((seg, i) => (
+              <React.Fragment key={i}>
+                {i > 0 ? <span aria-hidden>/</span> : null}
+                <Link
+                  href={`/secrets/${[mount, ...segments].slice(0, i + 1).join("/")}`}
+                  className="truncate rounded-sm py-0.5 transition-colors duration-150 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+                >
+                  {seg}
+                </Link>
+              </React.Fragment>
+            ))}
           </span>
           <CopyButton
             value={fullPath}

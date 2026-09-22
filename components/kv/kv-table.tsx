@@ -221,7 +221,7 @@ export function KvTable({
                 }
               }}
               aria-label="Filter keys at this path"
-              placeholder={`Filter ${keys.length} ${keys.length === 1 ? "key" : "keys"}…`}
+              placeholder="Filter by name…"
               className="h-8 w-full rounded-md border bg-transparent pl-8 pr-8 text-sm transition-[border-color,box-shadow] placeholder:text-muted-foreground hover:border-foreground/20 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
             />
             {filter ? (
