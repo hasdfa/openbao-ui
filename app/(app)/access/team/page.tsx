@@ -107,7 +107,7 @@ export default function TeamPage() {
         )}
       </section>
 
-      {/* Scoped access roles — shareable env groups + app-specific groups */}
+      {/* Scoped access roles — shareable env groups + project-specific groups */}
       <section className="mb-8">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="flex items-center gap-2 text-sm font-semibold">
@@ -162,7 +162,7 @@ export default function TeamPage() {
         ) : (
           <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
             No scoped roles yet. <strong>Grant access</strong> creates a policy + group limited to
-            the chosen environments and, optionally, a single application.
+            the chosen environments and, optionally, a single project.
           </p>
         )}
       </section>

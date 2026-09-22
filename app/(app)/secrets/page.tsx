@@ -150,7 +150,7 @@ export default function SecretsPage() {
     <div className="mx-auto max-w-6xl p-4 md:p-8">
       <PageHeader
         title="Secrets"
-        description="Apps across KV environments. Other engines stay folded away."
+        description="Projects across KV environments. Other engines stay folded away."
         className="mb-8"
         actions={
           <>
@@ -170,7 +170,7 @@ export default function SecretsPage() {
               href="/secrets/projects"
               className={buttonVariants({ variant: "outline", size: "sm" })}
             >
-              <Package /> Apps
+              <Package /> Projects
             </Link>
             <Button size="sm" onClick={() => setCreatingProject(true)}>
               <Plus /> New project

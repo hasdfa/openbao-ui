@@ -29,7 +29,7 @@ export default function ProjectCredentialsPage() {
   return (
     <div className="mx-auto max-w-4xl p-6">
       <p className="mb-5 text-sm text-muted-foreground">
-        App credentials are <strong>AppRole</strong> machine identities — a service logs in
+        Project credentials are <strong>AppRole</strong> machine identities — a service logs in
         with a <code>role_id</code> + <code>secret_id</code> to get a short-lived, scoped
         token. One credential is created <strong>per environment</strong> for isolation.
       </p>
@@ -66,7 +66,7 @@ export default function ProjectCredentialsPage() {
       ) : (
         <EmptyState
           icon={KeyRound}
-          title="No app credentials yet"
+          title="No project credentials yet"
           description="Issue a credential to give a service its own scoped, short-lived token (instead of a human/root token)."
         />
       )}
@@ -88,7 +88,7 @@ export default function ProjectCredentialsPage() {
             // Keep the dialog and definition available for retry; show the error below.
           }
         }}
-        title="Revoke app credential"
+        title="Revoke project credential"
         description={`Deletes the ${revoking?.roles.length ?? 0} AppRole(s) + policies for "${revoking?.project}". Any service still using them will stop receiving tokens.`}
         confirmLabel="Revoke"
         pending={revoke.isPending}

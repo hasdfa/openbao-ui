@@ -6,10 +6,12 @@ import { authorizeMetadata } from "@/lib/metadata-auth";
 import { isOperator } from "@/lib/ui-admin";
 
 /**
- * Definitions of scoped access roles (shareable env groups + app-specific
- * groups), per namespace. These are the structured intent ({ env selector, app,
- * level }); materializing one into an OpenBao policy + identity group happens
- * client-side. Stored so they're editable and re-syncable.
+ * Definitions of scoped access roles (shareable env groups + project-specific
+ * groups), per namespace. These are the structured intent ({ name, env
+ * selector, level, paths }); materializing one into an OpenBao policy +
+ * identity group happens client-side. Stored so they're editable and
+ * re-syncable. Unlike project credentials these rows carry no project field,
+ * which is why the v2 migration leaves them alone.
  *   GET /ui2/api/access-roles  — authenticated
  *   PUT /ui2/api/access-roles  — operator only (namespace from header)
  */

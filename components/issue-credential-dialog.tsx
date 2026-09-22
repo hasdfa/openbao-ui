@@ -129,7 +129,7 @@ export function IssueCredentialDialog({
   return (
     <Dialog open onClose={onClose} className="max-w-2xl">
       <DialogHeader
-        title="Issue app credential"
+        title="Issue project credential"
         description="Creates an isolated AppRole (machine identity) per environment, scoped to the secret paths you pick. Your service logs in with role_id + secret_id to get a short-lived token."
         onClose={onClose}
       />
@@ -177,7 +177,7 @@ export function IssueCredentialDialog({
         <div className="flex flex-col gap-1">
           <Label>Access granted</Label>
           <pre className="max-h-40 overflow-auto rounded-md border bg-muted/40 p-3 text-xs leading-relaxed">
-            <code>{preview || "Pick an app + environments to preview the policy."}</code>
+            <code>{preview || "Pick a project + environments to preview the policy."}</code>
           </pre>
         </div>
 

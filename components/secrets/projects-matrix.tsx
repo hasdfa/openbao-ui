@@ -43,7 +43,7 @@ export function ProjectsMatrix({
       <EmptyState
         icon={Package}
         title="Create an environment first"
-        description="Apps live as folders inside KV environments. Add production, staging, or similar, then register projects into them."
+        description="Projects live as folders inside KV environments. Add production, staging, or similar, then register projects into them."
       />
     );
   }
@@ -67,7 +67,7 @@ export function ProjectsMatrix({
       <table className="min-w-full text-sm">
         <thead>
           <tr className="border-b bg-muted/40 text-left">
-            <th className="px-4 py-2.5 font-medium">App</th>
+            <th className="px-4 py-2.5 font-medium">Project</th>
             {kvMounts.map((env) => (
               <th key={env.mount} className="px-3 py-2.5 font-medium">
                 <span className="inline-flex items-center gap-1.5">

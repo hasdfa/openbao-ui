@@ -40,10 +40,10 @@ export default function ProjectsPage() {
       <PageHeader
         title={
           <span className="flex items-center gap-2">
-            <Package className="size-6" /> Apps
+            <Package className="size-6" /> Projects
           </span>
         }
-        description="Your applications — folders of secrets across environments. Issue credentials or grant access per project."
+        description="Your projects — folders of secrets across environments. Issue credentials or grant access per project."
         className="mb-6"
         actions={
           <>
@@ -72,7 +72,7 @@ export default function ProjectsPage() {
         <EmptyState
           icon={Package}
           title="No projects yet"
-          description="Apps are top-level folders inside your environments (e.g. payments/). Add one, or create a secret under a new folder."
+          description="Projects are top-level folders inside your environments (e.g. payments/). Add one, or create a secret under a new folder."
         />
       ) : (
         <ul className="grid gap-3 sm:grid-cols-2">

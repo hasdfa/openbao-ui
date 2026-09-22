@@ -39,7 +39,7 @@ export function NewProjectDialog({ onClose }: { onClose: () => void }) {
     e.preventDefault();
     setError(null);
     if (!/^[a-zA-Z0-9_][a-zA-Z0-9_.-]*$/.test(cleanProject) || cleanProject === "." || cleanProject === "..") {
-      setError("App name is required (letters, numbers, _ . -)");
+      setError("Project name is required (letters, numbers, _ . -)");
       return;
     }
     try {
@@ -65,7 +65,7 @@ export function NewProjectDialog({ onClose }: { onClose: () => void }) {
       />
       <form className="flex flex-col gap-4" onSubmit={submit}>
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="App name (folder)">
+          <Field label="Project name (folder)">
             <Input value={project} onChange={(e) => setProject(e.target.value)} className="font-mono" placeholder="payments" autoFocus />
           </Field>
           <Field label="Display name (optional)">
