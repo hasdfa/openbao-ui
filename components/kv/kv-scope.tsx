@@ -63,10 +63,9 @@ export function KvScopeBar({
   const router = useRouter();
   const current = envs.find((e) => e.mount === mount);
   const projectSeg = segments[0];
-  const projectOpt = projectSeg
-    ? projects.find((p) => p.project === projectSeg)
-    : undefined;
-  const fullPath = [mount, ...segments].join("/");
+  const projectOpt = projects.find((p) => p.project === projectSeg);
+  const pathSegs = [mount, ...segments];
+  const fullPath = pathSegs.join("/");
 
   const hrefFor = (m: string) => `/secrets/${[m, ...segments].join("/")}`;
 
@@ -210,11 +209,11 @@ export function KvScopeBar({
             Without this the mount root has no affordance at all. */}
         <span className="flex min-w-0 items-center gap-0.5">
           <span className="flex min-w-0 items-center truncate font-mono text-xs text-muted-foreground">
-            {[mount, ...segments].map((seg, i) => (
+            {pathSegs.map((seg, i) => (
               <React.Fragment key={i}>
                 {i > 0 ? <span aria-hidden>/</span> : null}
                 <Link
-                  href={`/secrets/${[mount, ...segments].slice(0, i + 1).join("/")}`}
+                  href={`/secrets/${pathSegs.slice(0, i + 1).join("/")}`}
                   className="truncate rounded-sm py-0.5 transition-colors duration-150 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
                 >
                   {seg}
@@ -263,7 +262,7 @@ function PresenceNote({ presence }: { presence?: EnvPresence }) {
 /**
  * Every environment at the current path, side by side: how many keys each one
  * holds here and which are missing it entirely. This is the "see all envs for
- * one app" view — one row, always in the same order, never hidden behind a tab.
+ * one project" view — one row, always in the same order, never hidden behind a tab.
  */
 function EnvironmentStrip({
   mount,

@@ -7,7 +7,7 @@ import { seedProjectConfigs } from "@/lib/projects";
 const fetchBao = vi.mocked(baoFetch);
 beforeEach(() => vi.resetAllMocks());
 
-describe("app config seeding", () => {
+describe("project config seeding", () => {
   it("uses create-only CAS so an existing config cannot be overwritten", async () => {
     fetchBao.mockResolvedValue({});
     await seedProjectConfigs("app", [{ mount: "prod", v2: true }], "team");
