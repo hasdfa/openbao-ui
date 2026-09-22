@@ -171,9 +171,9 @@ export default function AppsPage() {
         <LabelEditor
           open
           onClose={() => setEditing(null)}
-          scope="application"
+          scope="project"
           refPath={editing}
-          current={labels?.[labelKey("application", editing)]}
+          current={labels?.[labelKey("project", editing)]}
           nativeName={editing}
         />
       ) : null}

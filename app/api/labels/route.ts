@@ -16,7 +16,7 @@ import { isOperator } from "@/lib/ui-admin";
  */
 export const dynamic = "force-dynamic";
 
-const SCOPES = new Set<LabelScope>(["workspace", "environment", "application"]);
+const SCOPES = new Set<LabelScope>(["workspace", "environment", "project"]);
 const isScope = (s: unknown): s is LabelScope =>
   typeof s === "string" && SCOPES.has(s as LabelScope);
 

@@ -13,7 +13,7 @@ import { useMounts } from "@/lib/kv";
 import { cn } from "@/lib/utils";
 
 /**
- * Register an app (an `application` label) and optionally seed an empty
+ * Register an app (a `project` label) and optionally seed an empty
  * `<app>/config` secret in the chosen environments so the folder exists.
  */
 export function NewAppDialog({ onClose }: { onClose: () => void }) {

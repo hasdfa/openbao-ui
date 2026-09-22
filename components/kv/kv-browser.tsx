@@ -139,7 +139,7 @@ function ScopedKvBrowser({
         .filter((k) => k.endsWith("/"))
         .map((k) => {
           const app = k.replace(/\/$/, "");
-          const lbl = labels?.[labelKey("application", app)];
+          const lbl = labels?.[labelKey("project", app)];
           return {
             app,
             name: lbl?.label || app,

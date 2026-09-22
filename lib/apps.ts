@@ -12,7 +12,7 @@ import { useNamespace } from "@/lib/namespace";
 
 export type AppInfo = {
   app: string; // folder name, e.g. "payments"
-  label?: Label; // application-scope label (friendly name / color / owner)
+  label?: Label; // project-scope label (friendly name / color / owner)
   envs: string[]; // KV mounts the app folder exists in
 };
 
@@ -26,7 +26,7 @@ function kvMountsOf(mounts: Record<string, { type: string; options?: Record<stri
 
 /**
  * Apps are top-level folders inside KV environments. This discovers them across
- * every KV mount and merges any `application`-scope labels (friendly name,
+ * every KV mount and merges any `project`-scope labels (friendly name,
  * color, owner) — including label-only apps that have no secrets yet.
  */
 export function useApps() {
@@ -66,12 +66,12 @@ export function useApps() {
     for (const [app, envs] of Object.entries(byApp)) {
       map.set(app, {
         app,
-        label: labels?.[labelKey("application", app)],
+        label: labels?.[labelKey("project", app)],
         envs: envs.slice().sort(),
       });
     }
     for (const l of Object.values(labels ?? {})) {
-      if (l.scope === "application" && !map.has(l.ref)) {
+      if (l.scope === "project" && !map.has(l.ref)) {
         map.set(l.ref, { app: l.ref, label: l, envs: [] });
       }
     }
@@ -101,7 +101,7 @@ export async function seedAppConfigs(app: string, envs: KvMount[], namespace: st
   }
 }
 
-/** Register an app: write its application label and (optionally) seed an empty
+/** Register an app: write its project label and (optionally) seed an empty
  *  `<app>/config` secret in the chosen environments so the folder exists. */
 export function useCreateApp() {
   const qc = useQueryClient();
@@ -121,7 +121,7 @@ export function useCreateApp() {
       }
       await seedAppConfigs(vars.app, vars.envs ?? [], namespace);
       await setLabel.mutateAsync({
-        scope: "application",
+        scope: "project",
         ref: vars.app,
         label: vars.label,
         color: vars.color,
@@ -243,7 +243,7 @@ export function useDeleteApp() {
         }
       }
       await deleteAppTrees(vars.app, vars.envs, namespace);
-      await clearLabel.mutateAsync({ scope: "application", ref: vars.app });
+      await clearLabel.mutateAsync({ scope: "project", ref: vars.app });
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: ["app-folders", namespace] });

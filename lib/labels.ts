@@ -6,10 +6,10 @@ import { API_BASE } from "@/lib/base-path";
 import { useNamespace } from "@/lib/namespace";
 
 // Client-side access to the BFF "nicer naming" label store (/ui2/api/labels).
-// workspace = namespace, environment = mount, application = path. Labels are
+// workspace = namespace, environment = mount, project = path. Labels are
 // presentation-only; the underlying OpenBao paths are never renamed.
 
-export type LabelScope = "workspace" | "environment" | "application";
+export type LabelScope = "workspace" | "environment" | "project";
 
 export type Label = {
   namespace: string;

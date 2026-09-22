@@ -292,9 +292,9 @@ export default function SecretsPage() {
         <LabelEditor
           open
           onClose={() => setEditingApp(null)}
-          scope="application"
+          scope="project"
           refPath={editingApp}
-          current={labels?.[labelKey("application", editingApp)]}
+          current={labels?.[labelKey("project", editingApp)]}
           nativeName={editingApp}
         />
       ) : null}
