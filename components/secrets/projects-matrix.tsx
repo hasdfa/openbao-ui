@@ -8,13 +8,13 @@ import { ColorDot } from "@/components/label-editor";
 import { EmptyState } from "@/components/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { type AppInfo, type KvMount } from "@/lib/apps";
+import { type ProjectInfo, type KvMount } from "@/lib/projects";
 import { cn } from "@/lib/utils";
 
 const iconBtn = "size-11 shrink-0 text-muted-foreground md:size-9";
 
-export function AppsMatrix({
-  apps,
+export function ProjectsMatrix({
+  projects,
   kvMounts,
   envName,
   envColor,
@@ -26,36 +26,36 @@ export function AppsMatrix({
   onIssue,
   onGrant,
 }: {
-  apps: AppInfo[];
+  projects: ProjectInfo[];
   kvMounts: KvMount[];
   envName: (mount: string) => string;
   envColor: (mount: string) => string | null;
   seeding: boolean;
   onCreate: () => void;
-  onEdit: (app: string) => void;
-  onDelete: (app: AppInfo) => void;
-  onSeed: (app: string, env: KvMount) => void;
-  onIssue: (app: string) => void;
-  onGrant: (app: string) => void;
+  onEdit: (project: string) => void;
+  onDelete: (project: ProjectInfo) => void;
+  onSeed: (project: string, env: KvMount) => void;
+  onIssue: (project: string) => void;
+  onGrant: (project: string) => void;
 }) {
   if (kvMounts.length === 0) {
     return (
       <EmptyState
         icon={Package}
         title="Create an environment first"
-        description="Apps live as folders inside KV environments. Add production, staging, or similar, then register apps into them."
+        description="Apps live as folders inside KV environments. Add production, staging, or similar, then register projects into them."
       />
     );
   }
-  if (apps.length === 0) {
+  if (projects.length === 0) {
     return (
       <EmptyState
         icon={Package}
-        title="No apps yet"
-        description="An app is a folder of secrets across environments — for example payments/ in prod and staging."
+        title="No projects yet"
+        description="An project is a folder of secrets across environments — for example payments/ in prod and staging."
         action={
           <Button size="sm" onClick={onCreate}>
-            <Plus /> New app
+            <Plus /> New project
           </Button>
         }
       />
@@ -82,33 +82,33 @@ export function AppsMatrix({
           </tr>
         </thead>
         <tbody>
-          {apps.map((app) => (
-            <tr key={app.app} className="border-b last:border-0">
+          {projects.map((project) => (
+            <tr key={project.project} className="border-b last:border-0">
               <td className="px-4 py-3 align-middle">
                 <div className="flex items-start gap-2">
-                  <ColorDot color={app.label?.color} className="mt-1.5 size-2.5 shrink-0" />
+                  <ColorDot color={project.label?.color} className="mt-1.5 size-2.5 shrink-0" />
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-1.5">
-                      <span className="font-medium">{app.label?.label || app.app}</span>
-                      {app.label?.label ? (
-                        <Badge variant="muted" className="font-mono">{app.app}</Badge>
+                      <span className="font-medium">{project.label?.label || project.project}</span>
+                      {project.label?.label ? (
+                        <Badge variant="muted" className="font-mono">{project.project}</Badge>
                       ) : null}
                     </div>
-                    {app.label?.description ? (
+                    {project.label?.description ? (
                       <p className="mt-0.5 max-w-xs truncate text-xs text-muted-foreground">
-                        {app.label.description}
+                        {project.label.description}
                       </p>
                     ) : null}
                   </div>
                 </div>
               </td>
               {kvMounts.map((env) => {
-                const present = app.envs.includes(env.mount);
+                const present = project.envs.includes(env.mount);
                 return (
                   <td key={env.mount} className="px-3 py-3 align-middle">
                     {present ? (
                       <Link
-                        href={`/secrets/${env.mount}/${app.app}`}
+                        href={`/secrets/${env.mount}/${project.project}`}
                         className={buttonVariants({ size: "sm", variant: "outline" })}
                       >
                         Open
@@ -118,7 +118,7 @@ export function AppsMatrix({
                         size="sm"
                         variant="ghost"
                         disabled={seeding}
-                        onClick={() => onSeed(app.app, env)}
+                        onClick={() => onSeed(project.project, env)}
                       >
                         <Plus /> Add
                       </Button>
@@ -136,8 +136,8 @@ export function AppsMatrix({
                     size="icon"
                     className={iconBtn}
                     title="Issue credential"
-                    aria-label={`Issue credential for ${app.app}`}
-                    onClick={() => onIssue(app.app)}
+                    aria-label={`Issue credential for ${project.project}`}
+                    onClick={() => onIssue(project.project)}
                   >
                     <KeyRound />
                   </Button>
@@ -147,8 +147,8 @@ export function AppsMatrix({
                     size="icon"
                     className={iconBtn}
                     title="Grant access"
-                    aria-label={`Grant access to ${app.app}`}
-                    onClick={() => onGrant(app.app)}
+                    aria-label={`Grant access to ${project.project}`}
+                    onClick={() => onGrant(project.project)}
                   >
                     <ShieldCheck />
                   </Button>
@@ -157,9 +157,9 @@ export function AppsMatrix({
                     variant="ghost"
                     size="icon"
                     className={iconBtn}
-                    title="Edit app"
-                    aria-label={`Edit ${app.app}`}
-                    onClick={() => onEdit(app.app)}
+                    title="Edit project"
+                    aria-label={`Edit ${project.project}`}
+                    onClick={() => onEdit(project.project)}
                   >
                     <Pencil />
                   </Button>
@@ -168,9 +168,9 @@ export function AppsMatrix({
                     variant="ghost"
                     size="icon"
                     className={cn(iconBtn, "hover:text-destructive")}
-                    title="Delete app"
-                    aria-label={`Delete ${app.app}`}
-                    onClick={() => onDelete(app)}
+                    title="Delete project"
+                    aria-label={`Delete ${project.project}`}
+                    onClick={() => onDelete(project)}
                   >
                     <Trash2 />
                   </Button>

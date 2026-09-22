@@ -18,7 +18,7 @@ export type EnvOption = {
   color: string | null;
 };
 
-export type AppOption = {
+export type ProjectOption = {
   app: string; // folder name — the OpenBao truth
   name: string; // friendly label, or the folder name
   labeled: boolean;
@@ -55,7 +55,7 @@ export function KvScopeBar({
   mount: string;
   segments: string[];
   envs: EnvOption[];
-  apps: AppOption[];
+  apps: ProjectOption[];
   presence: Record<string, EnvPresence>;
   actions?: React.ReactNode;
 }) {

@@ -404,7 +404,7 @@ test("access: issue an app credential reveals role_id/secret_id", async ({ page 
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
 
-  await page.goto("/ui2/access/app-credentials");
+  await page.goto("/ui2/access/project-credentials");
   await page.getByRole("button", { name: "Issue credential" }).click();
   const dialog = page.getByRole("dialog");
   await dialog.getByPlaceholder("backend").fill(app);
@@ -431,7 +431,7 @@ test("secrets: apps view + register a new app", async ({ page }) => {
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
 
-  await page.goto("/ui2/secrets/apps");
+  await page.goto("/ui2/secrets/projects");
   await expect(page.getByRole("heading", { name: "Apps" })).toBeVisible();
   await page.getByRole("button", { name: "New app" }).click();
   const dialog = page.getByRole("dialog");

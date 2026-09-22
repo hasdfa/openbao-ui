@@ -18,7 +18,7 @@ import {
 
 const credKey = (c: ProjectCredential) => c.project + "::" + JSON.stringify(c.env);
 
-export default function AppCredentialsPage() {
+export default function ProjectCredentialsPage() {
   const creds = useProjectCredentials();
   const revoke = useRevokeProjectCredential();
   const [issuing, setIssuing] = React.useState(false);

@@ -10,10 +10,10 @@ import { useMounts } from "@/lib/kv";
 import { labelKey, useClearLabel, useLabels, useSetLabel, type Label } from "@/lib/labels";
 import { useNamespace } from "@/lib/namespace";
 
-export type AppInfo = {
-  app: string; // folder name, e.g. "payments"
+export type ProjectInfo = {
+  project: string; // folder name, e.g. "payments"
   label?: Label; // project-scope label (friendly name / color / owner)
-  envs: string[]; // KV mounts the app folder exists in
+  envs: string[]; // KV mounts the project folder exists in
 };
 
 export type KvMount = { mount: string; v2: boolean };
@@ -25,21 +25,21 @@ function kvMountsOf(mounts: Record<string, { type: string; options?: Record<stri
 }
 
 /**
- * Apps are top-level folders inside KV environments. This discovers them across
+ * Projects are top-level folders inside KV environments. This discovers them across
  * every KV mount and merges any `project`-scope labels (friendly name,
- * color, owner) — including label-only apps that have no secrets yet.
+ * color, owner) — including label-only projects that have no secrets yet.
  */
-export function useApps() {
+export function useProjects() {
   const { namespace } = useNamespace();
   const { data: mounts } = useMounts();
   const { data: labels } = useLabels();
   const kvMounts = kvMountsOf(mounts);
 
   const discovery = useQuery({
-    queryKey: ["app-folders", namespace, kvMounts.map((m) => m.mount).join(",")],
+    queryKey: ["project-folders", namespace, kvMounts.map((m) => m.mount).join(",")],
     enabled: !!mounts,
     queryFn: async (): Promise<Record<string, string[]>> => {
-      const byApp: Record<string, string[]> = {};
+      const byProject: Record<string, string[]> = {};
       await Promise.all(
         kvMounts.map(async ({ mount, v2 }) => {
           try {
@@ -49,46 +49,46 @@ export function useApps() {
               list: true,
             });
             for (const k of res.data?.keys ?? []) {
-              if (k.endsWith("/")) (byApp[k.replace(/\/$/, "")] ??= []).push(mount);
+              if (k.endsWith("/")) (byProject[k.replace(/\/$/, "")] ??= []).push(mount);
             }
           } catch {
             // unlistable / empty mount — skip
           }
         }),
       );
-      return byApp;
+      return byProject;
     },
   });
 
-  const apps = React.useMemo<AppInfo[]>(() => {
-    const byApp = discovery.data ?? {};
-    const map = new Map<string, AppInfo>();
-    for (const [app, envs] of Object.entries(byApp)) {
-      map.set(app, {
-        app,
-        label: labels?.[labelKey("project", app)],
+  const projects = React.useMemo<ProjectInfo[]>(() => {
+    const byProject = discovery.data ?? {};
+    const map = new Map<string, ProjectInfo>();
+    for (const [project, envs] of Object.entries(byProject)) {
+      map.set(project, {
+        project,
+        label: labels?.[labelKey("project", project)],
         envs: envs.slice().sort(),
       });
     }
     for (const l of Object.values(labels ?? {})) {
       if (l.scope === "project" && !map.has(l.ref)) {
-        map.set(l.ref, { app: l.ref, label: l, envs: [] });
+        map.set(l.ref, { project: l.ref, label: l, envs: [] });
       }
     }
-    return Array.from(map.values()).sort((a, b) => a.app.localeCompare(b.app));
+    return Array.from(map.values()).sort((a, b) => a.project.localeCompare(b.project));
   }, [discovery.data, labels]);
 
-  return { apps, isLoading: discovery.isLoading, kvMounts };
+  return { projects, isLoading: discovery.isLoading, kvMounts };
 }
 
-export async function seedAppConfigs(app: string, envs: KvMount[], namespace: string): Promise<void> {
+export async function seedProjectConfigs(project: string, envs: KvMount[], namespace: string): Promise<void> {
   if (envs.some((env) => !env.v2)) {
     throw new Error("Automatic config creation is unavailable for KV v1 because existing data cannot be protected from overwrite.");
   }
   for (const env of envs) {
     try {
       await baoFetch({
-        path: `${env.mount}/data/${app}/config`, method: "POST", namespace,
+        path: `${env.mount}/data/${project}/config`, method: "POST", namespace,
         body: { data: {}, options: { cas: 0 } },
       });
     } catch (err) {
@@ -101,35 +101,35 @@ export async function seedAppConfigs(app: string, envs: KvMount[], namespace: st
   }
 }
 
-/** Register an app: write its project label and (optionally) seed an empty
- *  `<app>/config` secret in the chosen environments so the folder exists. */
-export function useCreateApp() {
+/** Register a project: write its project label and (optionally) seed an empty
+ *  `<project>/config` secret in the chosen environments so the folder exists. */
+export function useCreateProject() {
   const qc = useQueryClient();
   const { namespace } = useNamespace();
   const setLabel = useSetLabel();
   return useMutation({
-    meta: { success: "App created", silentError: true },
+    meta: { success: "Project created", silentError: true },
     mutationFn: async (vars: {
-      app: string;
+      project: string;
       label?: string;
       color?: string;
       description?: string;
       envs?: KvMount[];
     }) => {
-      if (!vars.app || vars.app === "." || vars.app === "..") {
-        throw new Error("Invalid app name");
+      if (!vars.project || vars.project === "." || vars.project === "..") {
+        throw new Error("Invalid project name");
       }
-      await seedAppConfigs(vars.app, vars.envs ?? [], namespace);
+      await seedProjectConfigs(vars.project, vars.envs ?? [], namespace);
       await setLabel.mutateAsync({
         scope: "project",
-        ref: vars.app,
+        ref: vars.project,
         label: vars.label,
         color: vars.color,
         description: vars.description,
       });
     },
     onSettled: () => {
-      qc.invalidateQueries({ queryKey: ["app-folders", namespace] });
+      qc.invalidateQueries({ queryKey: ["project-folders", namespace] });
       qc.invalidateQueries({ queryKey: ["kv-list", namespace] });
     },
   });
@@ -139,9 +139,9 @@ function folderPath(env: KvMount, path: string) {
   return env.v2 ? `${env.mount}/metadata/${path}` : `${env.mount}/${path}`;
 }
 
-/** Recursively list secret paths under an app folder in one environment. */
-export async function listAppSecretPaths(
-  app: string,
+/** Recursively list secret paths under a project folder in one environment. */
+export async function listProjectSecretPaths(
+  project: string,
   env: KvMount,
   namespace: string,
 ): Promise<string[]> {
@@ -166,17 +166,17 @@ export async function listAppSecretPaths(
     }
     return out;
   }
-  return walk(app);
+  return walk(project);
 }
 
-/** Delete every secret under the app folder in the given environments. */
-export async function deleteAppTrees(
-  app: string,
+/** Delete every secret under the project folder in the given environments. */
+export async function deleteProjectTrees(
+  project: string,
   envs: KvMount[],
   namespace: string,
 ): Promise<void> {
   for (const env of envs) {
-    const paths = await listAppSecretPaths(app, env, namespace);
+    const paths = await listProjectSecretPaths(project, env, namespace);
     for (const path of paths) {
       try {
         await baoFetch({
@@ -193,43 +193,43 @@ export async function deleteAppTrees(
   }
 }
 
-/** Create the app folder in one more environment without touching existing data. */
-export function useSeedAppInEnv() {
+/** Create the project folder in one more environment without touching existing data. */
+export function useSeedProjectInEnv() {
   const qc = useQueryClient();
   const { namespace } = useNamespace();
   return useMutation({
-    meta: { success: "App added to environment", silentError: true },
-    mutationFn: async (vars: { app: string; env: KvMount }) => {
-      await seedAppConfigs(vars.app, [vars.env], namespace);
+    meta: { success: "Project added to environment", silentError: true },
+    mutationFn: async (vars: { project: string; env: KvMount }) => {
+      await seedProjectConfigs(vars.project, [vars.env], namespace);
     },
     onSettled: () => {
-      qc.invalidateQueries({ queryKey: ["app-folders", namespace] });
+      qc.invalidateQueries({ queryKey: ["project-folders", namespace] });
       qc.invalidateQueries({ queryKey: ["kv-list", namespace] });
     },
   });
 }
 
-/** Remove the app's secrets from its environments, then drop its presentation label. */
-export function useDeleteApp() {
+/** Remove the project's secrets from its environments, then drop its presentation label. */
+export function useDeleteProject() {
   const qc = useQueryClient();
   const { namespace } = useNamespace();
   const clearLabel = useClearLabel();
   return useMutation({
-    meta: { success: "App deleted", silentError: true },
-    mutationFn: async (vars: { app: string; envs: KvMount[] }) => {
+    meta: { success: "Project deleted", silentError: true },
+    mutationFn: async (vars: { project: string; envs: KvMount[] }) => {
       const credRes = await fetch(`${API_BASE}/project-credentials`, {
         headers: { "x-vault-namespace": namespace },
       });
       if (!credRes.ok) {
-        throw new Error("Could not list app credentials; the app was not deleted.");
+        throw new Error("Could not list project credentials; the project was not deleted.");
       }
       const data = (await credRes.json()) as { creds?: ProjectCredential[] };
-      const mine = (data.creds ?? []).filter((c) => c.project === vars.app);
+      const mine = (data.creds ?? []).filter((c) => c.project === vars.project);
       for (const cred of mine) {
         await deleteCredentialResources(cred, namespace);
       }
       if (mine.length) {
-        const keep = (data.creds ?? []).filter((c) => c.project !== vars.app);
+        const keep = (data.creds ?? []).filter((c) => c.project !== vars.project);
         const save = await fetch(`${API_BASE}/project-credentials`, {
           method: "PUT",
           headers: {
@@ -239,14 +239,14 @@ export function useDeleteApp() {
           body: JSON.stringify({ creds: keep }),
         });
         if (!save.ok) {
-          throw new Error("Could not revoke credentials; the app was not deleted.");
+          throw new Error("Could not revoke credentials; the project was not deleted.");
         }
       }
-      await deleteAppTrees(vars.app, vars.envs, namespace);
-      await clearLabel.mutateAsync({ scope: "project", ref: vars.app });
+      await deleteProjectTrees(vars.project, vars.envs, namespace);
+      await clearLabel.mutateAsync({ scope: "project", ref: vars.project });
     },
     onSettled: () => {
-      qc.invalidateQueries({ queryKey: ["app-folders", namespace] });
+      qc.invalidateQueries({ queryKey: ["project-folders", namespace] });
       qc.invalidateQueries({ queryKey: ["kv-list", namespace] });
     },
   });

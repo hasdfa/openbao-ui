@@ -30,22 +30,22 @@ const LEVELS: AccessLevel[] = ["viewer", "editor"];
  */
 export function IssueCredentialDialog({
   existing,
-  initialApp,
+  initialProject,
   initialPaths,
   onClose,
 }: {
   existing: ProjectCredential[];
-  initialApp?: string;
+  initialProject?: string;
   initialPaths?: string[];
   onClose: () => void;
 }) {
   const issue = useIssueProjectCredential();
 
-  const [app, setApp] = React.useState(initialApp ?? "");
+  const [app, setProject] = React.useState(initialProject ?? "");
   const [level, setLevel] = React.useState<AccessLevel>("viewer");
   const [env, setEnv] = React.useState<EnvSelector>({ kind: "mounts", mounts: [] });
   const [paths, setPaths] = React.useState<string[]>(
-    initialPaths ?? (initialApp ? [`${initialApp}/*`] : []),
+    initialPaths ?? (initialProject ? [`${initialProject}/*`] : []),
   );
   const [ttl, setTtl] = React.useState("1h");
   const [mount, setMount] = React.useState("approle");
@@ -136,7 +136,7 @@ export function IssueCredentialDialog({
       <form className="flex flex-col gap-4" onSubmit={submit}>
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Client name">
-            <Input value={app} onChange={(e) => setApp(e.target.value)} className="font-mono" placeholder="backend" autoFocus disabled={!!initialApp} />
+            <Input value={app} onChange={(e) => setProject(e.target.value)} className="font-mono" placeholder="backend" autoFocus disabled={!!initialProject} />
           </Field>
           <Field label="Permission">
             <Segmented

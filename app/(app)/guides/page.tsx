@@ -22,7 +22,7 @@ import { cn } from "@/lib/utils";
 export default function GuidesPage() {
   const { data: mounts, isLoading } = useMounts();
   const { data: labels } = useLabels();
-  const appCreds = useProjectCredentials();
+  const projectCreds = useProjectCredentials();
   const [issuing, setIssuing] = React.useState(false);
 
   // "Environments" are the KV engines you can read secrets from.
@@ -156,8 +156,8 @@ export default function GuidesPage() {
 
           {issuing ? (
             <IssueCredentialDialog
-              existing={appCreds.data ?? []}
-              initialApp={path.split("/")[0] || undefined}
+              existing={projectCreds.data ?? []}
+              initialProject={path.split("/")[0] || undefined}
               onClose={() => setIssuing(false)}
             />
           ) : null}

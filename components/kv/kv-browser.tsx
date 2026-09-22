@@ -7,7 +7,7 @@ import * as React from "react";
 
 import {
   KvScopeBar,
-  type AppOption,
+  type ProjectOption,
   type EnvOption,
   type EnvPresence,
 } from "@/components/kv/kv-scope";
@@ -133,7 +133,7 @@ function ScopedKvBrowser({
 
   // Apps are the folders at the mount root; at the root this is the same query.
   const rootList = useKvList(mount, "");
-  const apps = React.useMemo<AppOption[]>(
+  const apps = React.useMemo<ProjectOption[]>(
     () =>
       (rootList.data ?? [])
         .filter((k) => k.endsWith("/"))

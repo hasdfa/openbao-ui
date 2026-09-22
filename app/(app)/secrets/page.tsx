@@ -8,10 +8,10 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { GrantAccessDialog } from "@/components/grant-access-dialog";
 import { IssueCredentialDialog } from "@/components/issue-credential-dialog";
 import { LabelEditor } from "@/components/label-editor";
-import { NewAppDialog } from "@/components/new-app-dialog";
+import { NewProjectDialog } from "@/components/new-project-dialog";
 import { NewEnvironmentDialog } from "@/components/new-environment-dialog";
 import { PageHeader } from "@/components/page-header";
-import { AppsMatrix } from "@/components/secrets/apps-matrix";
+import { ProjectsMatrix } from "@/components/secrets/projects-matrix";
 import { EnvironmentRail } from "@/components/secrets/environment-rail";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -20,7 +20,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { resolveEnvs, useAccessRoles } from "@/lib/access-roles";
 import { useCan } from "@/lib/acl";
 import { useProjectCredentials } from "@/lib/project-credentials";
-import { useApps, useDeleteApp, useSeedAppInEnv, type AppInfo, type KvMount } from "@/lib/apps";
+import { useProjects, useDeleteProject, useSeedProjectInEnv, type ProjectInfo, type KvMount } from "@/lib/projects";
 import { useDisableSecretEngine, useMounts } from "@/lib/kv";
 import { labelKey, useClearLabel, useLabels } from "@/lib/labels";
 
@@ -58,25 +58,25 @@ function engineMeta(type: string) {
 export default function SecretsPage() {
   const { data: mounts, isLoading, isError } = useMounts();
   const { data: labels } = useLabels();
-  const { apps, isLoading: appsLoading, kvMounts } = useApps();
+  const { projects, isLoading: projectsLoading, kvMounts } = useProjects();
   const can = useCan();
   const accessRoles = useAccessRoles();
-  const appCreds = useProjectCredentials();
+  const projectCreds = useProjectCredentials();
   const disable = useDisableSecretEngine();
   const clearLabel = useClearLabel();
-  const seedEnv = useSeedAppInEnv();
-  const deleteApp = useDeleteApp();
+  const seedEnv = useSeedProjectInEnv();
+  const deleteProject = useDeleteProject();
 
   const [editingEnv, setEditingEnv] = React.useState<string | null>(null);
   const [creatingEnv, setCreatingEnv] = React.useState(false);
-  const [creatingApp, setCreatingApp] = React.useState(false);
-  const [editingApp, setEditingApp] = React.useState<string | null>(null);
+  const [creatingProject, setCreatingProject] = React.useState(false);
+  const [editingProject, setEditingProject] = React.useState<string | null>(null);
   const [issuing, setIssuing] = React.useState<string | null>(null);
   const [granting, setGranting] = React.useState<string | null>(null);
   const [deletingEnv, setDeletingEnv] = React.useState<string | null>(null);
   const [deleteEnvError, setDeleteEnvError] = React.useState<string | null>(null);
-  const [deletingApp, setDeletingApp] = React.useState<AppInfo | null>(null);
-  const [deleteAppError, setDeleteAppError] = React.useState<string | null>(null);
+  const [deletingProject, setDeletingProject] = React.useState<ProjectInfo | null>(null);
+  const [deleteProjectError, setDeleteProjectError] = React.useState<string | null>(null);
   const [seedError, setSeedError] = React.useState<string | null>(null);
 
   const envName = (m: string) => labels?.[labelKey("environment", `${m}/`)]?.label || m;
@@ -125,24 +125,24 @@ export default function SecretsPage() {
     }
   }
 
-  async function confirmDeleteApp() {
-    if (!deletingApp) return;
-    setDeleteAppError(null);
+  async function confirmDeleteProject() {
+    if (!deletingProject) return;
+    setDeleteProjectError(null);
     try {
-      const present = kvMounts.filter((env) => deletingApp.envs.includes(env.mount));
-      await deleteApp.mutateAsync({ app: deletingApp.app, envs: present });
-      setDeletingApp(null);
+      const present = kvMounts.filter((env) => deletingProject.envs.includes(env.mount));
+      await deleteProject.mutateAsync({ project: deletingProject.project, envs: present });
+      setDeletingProject(null);
     } catch (err) {
-      setDeleteAppError(err instanceof Error ? err.message : "Failed to delete app");
+      setDeleteProjectError(err instanceof Error ? err.message : "Failed to delete project");
     }
   }
 
-  async function seed(app: string, env: KvMount) {
+  async function seed(project: string, env: KvMount) {
     setSeedError(null);
     try {
-      await seedEnv.mutateAsync({ app, env });
+      await seedEnv.mutateAsync({ project, env });
     } catch (err) {
-      setSeedError(err instanceof Error ? err.message : "Failed to add app to environment");
+      setSeedError(err instanceof Error ? err.message : "Failed to add project to environment");
     }
   }
 
@@ -167,13 +167,13 @@ export default function SecretsPage() {
               <GitCompare /> Compare
             </Link>
             <Link
-              href="/secrets/apps"
+              href="/secrets/projects"
               className={buttonVariants({ variant: "outline", size: "sm" })}
             >
               <Package /> Apps
             </Link>
-            <Button size="sm" onClick={() => setCreatingApp(true)}>
-              <Plus /> New app
+            <Button size="sm" onClick={() => setCreatingProject(true)}>
+              <Plus /> New project
             </Button>
           </>
         }
@@ -208,24 +208,24 @@ export default function SecretsPage() {
             <div className="mb-3">
               <h2 className="text-base font-semibold tracking-tight">Apps</h2>
               <p className="mt-0.5 text-sm text-muted-foreground">
-                Open a cell to browse, or add the app where it is missing.
+                Open a cell to browse, or add the project where it is missing.
               </p>
             </div>
             {seedError ? <p className="mb-3 text-sm text-destructive">{seedError}</p> : null}
-            {appsLoading ? (
+            {projectsLoading ? (
               <Skeleton className="h-40 w-full rounded-xl" />
             ) : (
-              <AppsMatrix
-                apps={apps}
+              <ProjectsMatrix
+                projects={projects}
                 kvMounts={kvMounts}
                 envName={envName}
                 envColor={envColor}
                 seeding={seedEnv.isPending}
-                onCreate={() => setCreatingApp(true)}
-                onEdit={setEditingApp}
-                onDelete={(app) => {
-                  setDeleteAppError(null);
-                  setDeletingApp(app);
+                onCreate={() => setCreatingProject(true)}
+                onEdit={setEditingProject}
+                onDelete={(project) => {
+                  setDeleteProjectError(null);
+                  setDeletingProject(project);
                 }}
                 onSeed={seed}
                 onIssue={setIssuing}
@@ -288,24 +288,24 @@ export default function SecretsPage() {
         />
       ) : null}
 
-      {editingApp ? (
+      {editingProject ? (
         <LabelEditor
           open
-          onClose={() => setEditingApp(null)}
+          onClose={() => setEditingProject(null)}
           scope="project"
-          refPath={editingApp}
-          current={labels?.[labelKey("project", editingApp)]}
-          nativeName={editingApp}
+          refPath={editingProject}
+          current={labels?.[labelKey("project", editingProject)]}
+          nativeName={editingProject}
         />
       ) : null}
 
       {creatingEnv ? <NewEnvironmentDialog onClose={() => setCreatingEnv(false)} /> : null}
-      {creatingApp ? <NewAppDialog onClose={() => setCreatingApp(false)} /> : null}
+      {creatingProject ? <NewProjectDialog onClose={() => setCreatingProject(false)} /> : null}
       {issuing ? (
-        <IssueCredentialDialog existing={appCreds.data ?? []} initialApp={issuing} onClose={() => setIssuing(null)} />
+        <IssueCredentialDialog existing={projectCreds.data ?? []} initialProject={issuing} onClose={() => setIssuing(null)} />
       ) : null}
       {granting ? (
-        <GrantAccessDialog existing={accessRoles.data ?? []} initialApp={granting} onClose={() => setGranting(null)} />
+        <GrantAccessDialog existing={accessRoles.data ?? []} initialProject={granting} onClose={() => setGranting(null)} />
       ) : null}
 
       <ConfirmDialog
@@ -331,19 +331,19 @@ export default function SecretsPage() {
       />
 
       <ConfirmDialog
-        open={!!deletingApp}
-        onClose={() => setDeletingApp(null)}
-        onConfirm={confirmDeleteApp}
-        title="Delete app"
-        description={`Permanently deletes every secret under "${deletingApp?.app}/" in ${
-          deletingApp?.envs.length
-            ? deletingApp.envs.map(envName).join(", ")
+        open={!!deletingProject}
+        onClose={() => setDeletingProject(null)}
+        onConfirm={confirmDeleteProject}
+        title="Delete project"
+        description={`Permanently deletes every secret under "${deletingProject?.project}/" in ${
+          deletingProject?.envs.length
+            ? deletingProject.envs.map(envName).join(", ")
             : "no environments"
-        }, then unregisters the app.`}
-        confirmText={deletingApp?.app}
-        confirmLabel="Delete app"
-        pending={deleteApp.isPending}
-        error={deleteAppError}
+        }, then unregisters the project.`}
+        confirmText={deletingProject?.project}
+        confirmLabel="Delete project"
+        pending={deleteProject.isPending}
+        error={deleteProjectError}
       />
     </div>
   );
