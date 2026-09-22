@@ -80,7 +80,7 @@ export function EnvScopePicker({
           <div className="flex flex-wrap gap-2">
             {kvMounts.map((m) => (
               <label key={m} className={cn("flex cursor-pointer items-center gap-2 rounded-md border px-2.5 py-1 text-sm", selMounts.includes(m) ? "border-primary bg-accent" : "text-muted-foreground")}>
-                <input type="checkbox" checked={selMounts.includes(m)} onChange={() => setSelMounts((s) => s.includes(m) ? s.filter((x) => x !== m) : [...s, m])} />
+                <input type="checkbox" className="accent-[var(--color-primary)]" checked={selMounts.includes(m)} onChange={() => setSelMounts((s) => s.includes(m) ? s.filter((x) => x !== m) : [...s, m])} />
                 {envName(m)}
               </label>
             ))}

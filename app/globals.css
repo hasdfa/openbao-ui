@@ -10,6 +10,8 @@
  * Components consume these via the @theme mapping below.
  */
 :root {
+  /* native controls (checkboxes, scrollbars, caret) follow the theme */
+  color-scheme: light;
   --radius: 0.625rem;
   --background: #ffffff;
   --foreground: #091a28;
@@ -40,6 +42,7 @@
 }
 
 .dark {
+  color-scheme: dark;
   --background: #091a28;
   --foreground: #eef3f1;
   --card: #0e2433;
@@ -112,16 +115,21 @@
   --shadow-xl: 0 24px 48px -12px rgb(9 26 40 / 0.22);
 }
 
-* {
-  border-color: var(--color-border);
-}
+/* The default border color must sit in @layer base: unlayered rules outrank
+ * every layered utility, so a bare `*` here would silently beat `border-primary`,
+ * `border-transparent` and friends everywhere in the app. */
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
 
-body {
-  background-color: var(--color-background);
-  color: var(--color-foreground);
-  font-family: var(--font-sans);
-  -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
 }
 
 /* brand-tinted text selection */
