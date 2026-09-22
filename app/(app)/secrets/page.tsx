@@ -223,25 +223,19 @@ export default function SecretsPage() {
             )}
           </section>
 
-          {/* Environments are the mounts projects live in — needed to set up,
-              rarely while working. Open by default until a project exists, so
-              first-run still surfaces "New environment". */}
-          <Disclosure
-            label="Environments"
-            count={kvEnvs.length}
-            defaultOpen={projects.length === 0}
-          >
-            <EnvironmentRail
-              envs={kvEnvs}
-              canManage={can("sys/mounts")}
-              onCreate={() => setCreatingEnv(true)}
-              onEdit={setEditingEnv}
-              onDelete={(path) => {
-                setDeleteEnvError(null);
-                setDeletingEnv(path);
-              }}
-            />
-          </Disclosure>
+          {/* Projects lead, environments follow. Deliberately NOT folded away:
+              creating, renaming and disabling an environment all live here, and
+              a collapsed section is a poor home for first-run setup. */}
+          <EnvironmentRail
+            envs={kvEnvs}
+            canManage={can("sys/mounts")}
+            onCreate={() => setCreatingEnv(true)}
+            onEdit={setEditingEnv}
+            onDelete={(path) => {
+              setDeleteEnvError(null);
+              setDeletingEnv(path);
+            }}
+          />
 
           {otherEngines.length ? (
             <Disclosure label="Other secret engines" count={otherEngines.length}>

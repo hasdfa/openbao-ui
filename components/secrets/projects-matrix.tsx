@@ -68,12 +68,19 @@ export function ProjectsMatrix({
         <thead>
           <tr className="border-b bg-muted/40 text-left">
             <th className="px-4 py-2.5 font-medium">Project</th>
+            {/* The header is the way into an environment root — every project
+                it holds, not just the one on this row. Without it the mount
+                root has no affordance once the rail below is collapsed. */}
             {kvMounts.map((env) => (
               <th key={env.mount} className="px-3 py-2.5 font-medium">
-                <span className="inline-flex items-center gap-1.5">
+                <Link
+                  href={`/secrets/${env.mount}`}
+                  title={`Browse everything in ${envName(env.mount)}`}
+                  className="inline-flex items-center gap-1.5 rounded-md px-1 py-0.5 -mx-1 transition-colors duration-150 hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+                >
                   <ColorDot color={envColor(env.mount)} className="size-2 shrink-0" />
                   {envName(env.mount)}
-                </span>
+                </Link>
               </th>
             ))}
             <th className="px-3 py-2.5 font-medium">

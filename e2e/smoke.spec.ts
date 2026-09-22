@@ -16,10 +16,13 @@ test("login and browse the KV engine", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
   await expect(page.getByText("Unsealed")).toBeVisible();
 
-  // navigate to the secret engine list and into the KV mount
+  // navigate to the secret engine list and into the KV mount. The environment
+  // column header is the route to a mount root now that projects lead the page.
+  // Matched by href, not by name: the header shows the environment's friendly
+  // label when one is set, which differs per instance.
   await page.getByRole("link", { name: "Secrets" }).click();
-  await expect(page.getByText("secret/")).toBeVisible();
-  await page.getByRole("link", { name: "secret/" }).click();
+  await page.locator('a[href="/ui2/secrets/secret"]').first().click();
+  await expect(page).toHaveURL(/\/ui2\/secrets\/secret$/);
 
   // the KV browser renders (breadcrumb shows the mount)
   await expect(page.getByRole("link", { name: "secret", exact: true })).toBeVisible();
@@ -229,8 +232,12 @@ test("environments: customize a friendly display name", async ({ page }) => {
   await page.fill("#lbl-name", friendly);
   await page.getByRole("button", { name: "Save" }).click();
 
-  // the friendly name replaces the raw mount path as the environment title
-  await expect(page.getByRole("link", { name: friendly })).toBeVisible();
+  // The friendly name replaces the raw mount path as the environment title.
+  // It now names two links — the projects-matrix column header and the rail
+  // card — so match the rail's, which is the one this test renamed.
+  await expect(
+    page.getByRole("link", { name: `${friendly} kv v2` }),
+  ).toBeVisible();
 });
 
 test("settings: profile, preferences, namespaces", async ({ page }) => {
