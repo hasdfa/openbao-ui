@@ -58,7 +58,7 @@ export function NewEnvironmentDialog({ onClose }: { onClose: () => void }) {
     <Dialog open onClose={onClose}>
       <DialogHeader
         title="New environment"
-        description="Enables a KV v2 secrets engine. Apps live as folders inside it (e.g. payments, billing)."
+        description="Enables a KV v2 secrets engine. Projects live as folders inside it (e.g. payments, billing)."
         onClose={onClose}
       />
       <form className="flex flex-col gap-4" onSubmit={submit}>

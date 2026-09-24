@@ -9,7 +9,7 @@ import { IssueCredentialDialog } from "@/components/issue-credential-dialog";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { useAppCredentials } from "@/lib/app-credentials";
+import { useProjectCredentials } from "@/lib/project-credentials";
 import { Input } from "@/components/ui/input";
 import { Label as FieldLabel } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -22,7 +22,7 @@ import { cn } from "@/lib/utils";
 export default function GuidesPage() {
   const { data: mounts, isLoading } = useMounts();
   const { data: labels } = useLabels();
-  const appCreds = useAppCredentials();
+  const projectCreds = useProjectCredentials();
   const [issuing, setIssuing] = React.useState(false);
 
   // "Environments" are the KV engines you can read secrets from.
@@ -156,8 +156,8 @@ export default function GuidesPage() {
 
           {issuing ? (
             <IssueCredentialDialog
-              existing={appCreds.data ?? []}
-              initialApp={path.split("/")[0] || undefined}
+              existing={projectCreds.data ?? []}
+              initialProject={path.split("/")[0] || undefined}
               onClose={() => setIssuing(false)}
             />
           ) : null}

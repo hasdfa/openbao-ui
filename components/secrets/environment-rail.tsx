@@ -40,7 +40,7 @@ export function EnvironmentRail({
         <div>
           <h2 className="text-base font-semibold tracking-tight">Environments</h2>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            KV mounts. Apps are folders inside them.
+            KV mounts. Projects are folders inside them.
           </p>
         </div>
         {canManage ? (
@@ -51,7 +51,7 @@ export function EnvironmentRail({
       </div>
       {envs.length === 0 ? (
         <p className="rounded-lg border border-dashed px-4 py-6 text-sm text-muted-foreground">
-          No environments yet. Create one to start grouping app secrets.
+          No environments yet. Create one to start grouping project secrets.
         </p>
       ) : (
         <ul className="flex flex-wrap gap-2">

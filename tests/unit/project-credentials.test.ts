@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { credNames, envIdent } from "@/lib/app-credentials";
+import { credNames, envIdent } from "@/lib/project-credentials";
 
 describe("credNames", () => {
   it("uses a fresh unique identity even when display slugs collide", () => {

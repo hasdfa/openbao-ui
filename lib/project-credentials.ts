@@ -9,10 +9,10 @@ import { baoFetch, BaoError } from "@/lib/bao-client";
 import { safeAuthMount, safeBaoName } from "@/lib/oidc-domains";
 import { useNamespace } from "@/lib/namespace";
 
-// A machine identity for an app: one AppRole per environment (isolated), each
+// A machine identity for a project: one AppRole per environment (isolated), each
 // bound to a scoped policy. The store keeps only this non-secret definition.
-export type AppCredential = {
-  app: string; // client name (also the role/policy prefix), e.g. "backend"
+export type ProjectCredential = {
+  project: string; // client name (also the role/policy prefix), e.g. "backend"
   level: AccessLevel; // viewer = read-only, editor = read/write
   env: EnvSelector;
   mount: string; // approle auth mount (default "approle")
@@ -40,8 +40,8 @@ const slug = (s: string) =>
     .replace(/^-|-$/g, "");
 
 /** Unique names per issuance; display slugs are never used as identity keys. */
-export function credNames(app: string, env: string, level: AccessLevel) {
-  const a = slug(app);
+export function credNames(project: string, env: string, level: AccessLevel) {
+  const a = slug(project);
   const e = slug(env);
   const suffix = level === "viewer" ? "read" : level;
   const id = crypto.randomUUID();
@@ -54,25 +54,25 @@ export const envIdent = (e: EnvTarget) => (e.envPath ? `${e.mount}-${e.envPath}`
 
 // --- store ---
 
-export function useAppCredentials() {
+export function useProjectCredentials() {
   const { namespace } = useNamespace();
   return useQuery({
-    queryKey: ["app-credentials", namespace],
-    queryFn: async (): Promise<AppCredential[]> => {
-      const res = await fetch(`${API_BASE}/app-credentials`, {
+    queryKey: ["project-credentials", namespace],
+    queryFn: async (): Promise<ProjectCredential[]> => {
+      const res = await fetch(`${API_BASE}/project-credentials`, {
         headers: { "x-vault-namespace": namespace },
       });
       if (!res.ok) return [];
-      const data = (await res.json()) as { creds?: AppCredential[] };
+      const data = (await res.json()) as { creds?: ProjectCredential[] };
       return data.creds ?? [];
     },
   });
 }
 
-function useSaveAppCredentials() {
+function useSaveProjectCredentials() {
   const { namespace } = useNamespace();
-  return async (creds: AppCredential[]) => {
-    const res = await fetch(`${API_BASE}/app-credentials`, {
+  return async (creds: ProjectCredential[]) => {
+    const res = await fetch(`${API_BASE}/project-credentials`, {
       method: "PUT",
       headers: { "Content-Type": "application/json", "x-vault-namespace": namespace },
       body: JSON.stringify({ creds }),
@@ -84,8 +84,8 @@ function useSaveAppCredentials() {
   };
 }
 
-const sameCred = (a: AppCredential, app: string, env: EnvSelector) =>
-  a.app === app && JSON.stringify(a.env) === JSON.stringify(env);
+const sameCred = (a: ProjectCredential, project: string, env: EnvSelector) =>
+  a.project === project && JSON.stringify(a.env) === JSON.stringify(env);
 
 async function ensureApprole(mount: string, namespace: string) {
   try {
@@ -117,29 +117,29 @@ export async function assertCredentialNamesAvailable(
 }
 
 /**
- * Issue an app credential: for EACH resolved environment, write a scoped policy,
- * create an AppRole bound to it, and fetch role_id + a fresh secret_id. Per-env
- * isolation: a leak in one env can't read another. Returns the secrets once and
- * persists only the definition.
+ * Issue a project credential: for EACH resolved environment, write a scoped
+ * policy, create an AppRole bound to it, and fetch role_id + a fresh secret_id.
+ * Per-env isolation: a leak in one env can't read another. Returns the secrets
+ * once and persists only the definition.
  */
-export function useIssueAppCredential() {
+export function useIssueProjectCredential() {
   const qc = useQueryClient();
   const { namespace } = useNamespace();
-  const save = useSaveAppCredentials();
+  const save = useSaveProjectCredentials();
   return useMutation({
-    meta: { success: "App credential issued", silentError: true },
+    meta: { success: "Project credential issued", silentError: true },
     mutationFn: async (vars: {
-      app: string;
+      project: string;
       env: EnvSelector;
       level: AccessLevel;
       mount?: string;
       ttl?: string;
       paths?: string[];
-      existing: AppCredential[];
-    }): Promise<{ definition: AppCredential; issued: IssuedCred[] }> => {
-      const app = safeBaoName(vars.app);
-      if (!app) throw new Error("App name contains unsupported characters");
-      if (vars.existing.some((c) => sameCred(c, app, vars.env))) {
+      existing: ProjectCredential[];
+    }): Promise<{ definition: ProjectCredential; issued: IssuedCred[] }> => {
+      const project = safeBaoName(vars.project);
+      if (!project) throw new Error("Project name contains unsupported characters");
+      if (vars.existing.some((c) => sameCred(c, project, vars.env))) {
         throw new Error("This credential already exists. Rotate it, or revoke it before issuing a replacement.");
       }
       const mount = safeAuthMount(vars.mount || "approle");
@@ -150,7 +150,7 @@ export function useIssueAppCredential() {
       // Validate all scopes before creating any OpenBao resources.
       const planned = envs.map((e) => ({
         ident: envIdent(e),
-        ...credNames(app, envIdent(e), vars.level),
+        ...credNames(project, envIdent(e), vars.level),
         policyHcl: buildAccessPolicy({ envs: [e], level: vars.level, paths: vars.paths }),
       }));
       await ensureApprole(mount, namespace);
@@ -158,7 +158,7 @@ export function useIssueAppCredential() {
       await save(vars.existing);
 
       const issued: IssuedCred[] = [];
-      const roles: AppCredential["roles"] = [];
+      const roles: ProjectCredential["roles"] = [];
       for (const { ident, role, policy, policyHcl } of planned) {
         await baoFetch({
           path: `sys/policies/acl/${policy}`,
@@ -186,8 +186,8 @@ export function useIssueAppCredential() {
         roles.push({ env: ident, role, policy });
       }
 
-      const definition: AppCredential = {
-        app,
+      const definition: ProjectCredential = {
+        project,
         level: vars.level,
         env: vars.env,
         mount,
@@ -205,7 +205,7 @@ export function useIssueAppCredential() {
       return { definition, issued };
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["app-credentials", namespace] });
+      qc.invalidateQueries({ queryKey: ["project-credentials", namespace] });
       qc.invalidateQueries({ queryKey: ["policies", namespace] });
     },
   });
@@ -228,7 +228,7 @@ export function useRotateSecretId() {
   });
 }
 
-export async function deleteCredentialResources(cred: AppCredential, namespace: string): Promise<void> {
+export async function deleteCredentialResources(cred: ProjectCredential, namespace: string): Promise<void> {
   const mount = safeAuthMount(cred.mount);
   if (!mount) throw new Error("Invalid AppRole mount");
   for (const r of cred.roles) {
@@ -246,18 +246,18 @@ export async function deleteCredentialResources(cred: AppCredential, namespace: 
 }
 
 /** Revoke: delete every per-env AppRole + policy, then drop the definition. */
-export function useRevokeAppCredential() {
+export function useRevokeProjectCredential() {
   const qc = useQueryClient();
   const { namespace } = useNamespace();
-  const save = useSaveAppCredentials();
+  const save = useSaveProjectCredentials();
   return useMutation({
-    meta: { success: "App credential revoked", silentError: true },
-    mutationFn: async (vars: { cred: AppCredential; existing: AppCredential[] }) => {
+    meta: { success: "Project credential revoked", silentError: true },
+    mutationFn: async (vars: { cred: ProjectCredential; existing: ProjectCredential[] }) => {
       await deleteCredentialResources(vars.cred, namespace);
-      await save(vars.existing.filter((c) => !sameCred(c, vars.cred.app, vars.cred.env)));
+      await save(vars.existing.filter((c) => !sameCred(c, vars.cred.project, vars.cred.env)));
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["app-credentials", namespace] });
+      qc.invalidateQueries({ queryKey: ["project-credentials", namespace] });
       qc.invalidateQueries({ queryKey: ["policies", namespace] });
     },
   });

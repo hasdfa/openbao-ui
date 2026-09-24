@@ -6,17 +6,17 @@ vi.mock("@/lib/bao-client", async (importOriginal) => ({
 }));
 
 import { baoFetch, BaoError } from "@/lib/bao-client";
-import { deleteAppTrees, listAppSecretPaths } from "@/lib/apps";
+import { deleteProjectTrees, listProjectSecretPaths } from "@/lib/projects";
 
 const fetchBao = vi.mocked(baoFetch);
 beforeEach(() => vi.resetAllMocks());
 
-describe("listAppSecretPaths", () => {
+describe("listProjectSecretPaths", () => {
   it("walks nested folders and returns leaf secret paths", async () => {
     fetchBao
       .mockResolvedValueOnce({ data: { keys: ["config", "db/"] } })
       .mockResolvedValueOnce({ data: { keys: ["password"] } });
-    await expect(listAppSecretPaths("payments", { mount: "prod", v2: true }, "team"))
+    await expect(listProjectSecretPaths("payments", { mount: "prod", v2: true }, "team"))
       .resolves.toEqual(["payments/config", "payments/db/password"]);
     expect(fetchBao).toHaveBeenNthCalledWith(1, {
       path: "prod/metadata/payments",
@@ -32,18 +32,18 @@ describe("listAppSecretPaths", () => {
 
   it("treats a missing folder as empty", async () => {
     fetchBao.mockRejectedValue(new BaoError(404, ["missing"]));
-    await expect(listAppSecretPaths("ghost", { mount: "prod", v2: true }, "")).resolves.toEqual([]);
+    await expect(listProjectSecretPaths("ghost", { mount: "prod", v2: true }, "")).resolves.toEqual([]);
   });
 });
 
-describe("deleteAppTrees", () => {
+describe("deleteProjectTrees", () => {
   it("deletes listed secrets with create-only-safe 404s ignored", async () => {
     fetchBao
       .mockResolvedValueOnce({ data: { keys: ["config"] } })
       .mockRejectedValueOnce(new BaoError(404, ["already gone"]))
       .mockResolvedValueOnce({ data: { keys: ["token"] } })
       .mockResolvedValueOnce({});
-    await deleteAppTrees(
+    await deleteProjectTrees(
       "api",
       [{ mount: "dev", v2: true }, { mount: "prod", v2: false }],
       "team",
@@ -64,7 +64,7 @@ describe("deleteAppTrees", () => {
     fetchBao
       .mockResolvedValueOnce({ data: { keys: ["config"] } })
       .mockRejectedValueOnce(new BaoError(403, ["denied"]));
-    await expect(deleteAppTrees("api", [{ mount: "prod", v2: true }, { mount: "later", v2: true }], ""))
+    await expect(deleteProjectTrees("api", [{ mount: "prod", v2: true }, { mount: "later", v2: true }], ""))
       .rejects.toThrow(/prod/);
     expect(fetchBao.mock.calls.some(([req]) => String(req.path).includes("later"))).toBe(false);
   });

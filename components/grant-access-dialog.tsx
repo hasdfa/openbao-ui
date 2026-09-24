@@ -22,19 +22,19 @@ const LEVELS: AccessLevel[] = ["viewer", "editor", "admin"];
 export function GrantAccessDialog({
   existing,
   initial,
-  initialApp,
+  initialProject,
   initialPaths,
   onClose,
 }: {
   existing: AccessRole[];
   initial?: AccessRole;
-  initialApp?: string;
+  initialProject?: string;
   initialPaths?: string[];
   onClose: () => void;
 }) {
   const apply = useApplyAccessRole();
 
-  const [name, setName] = React.useState(initial?.name ?? initialApp ?? "");
+  const [name, setName] = React.useState(initial?.name ?? initialProject ?? "");
   const [description, setDescription] = React.useState(initial?.description ?? "");
   const [level, setLevel] = React.useState<AccessLevel>(initial?.level ?? "viewer");
   const [env, setEnv] = React.useState<EnvSelector>(initial?.env ?? { kind: "mounts", mounts: [] });

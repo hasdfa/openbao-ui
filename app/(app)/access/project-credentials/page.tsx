@@ -10,26 +10,26 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogHeader } from "@/components/ui/dialog";
 import {
-  useAppCredentials,
-  useRevokeAppCredential,
+  useProjectCredentials,
+  useRevokeProjectCredential,
   useRotateSecretId,
-  type AppCredential,
-} from "@/lib/app-credentials";
+  type ProjectCredential,
+} from "@/lib/project-credentials";
 
-const credKey = (c: AppCredential) => c.app + "::" + JSON.stringify(c.env);
+const credKey = (c: ProjectCredential) => c.project + "::" + JSON.stringify(c.env);
 
-export default function AppCredentialsPage() {
-  const creds = useAppCredentials();
-  const revoke = useRevokeAppCredential();
+export default function ProjectCredentialsPage() {
+  const creds = useProjectCredentials();
+  const revoke = useRevokeProjectCredential();
   const [issuing, setIssuing] = React.useState(false);
-  const [rotating, setRotating] = React.useState<AppCredential | null>(null);
-  const [revoking, setRevoking] = React.useState<AppCredential | null>(null);
+  const [rotating, setRotating] = React.useState<ProjectCredential | null>(null);
+  const [revoking, setRevoking] = React.useState<ProjectCredential | null>(null);
   const list = creds.data ?? [];
 
   return (
     <div className="mx-auto max-w-4xl p-6">
       <p className="mb-5 text-sm text-muted-foreground">
-        App credentials are <strong>AppRole</strong> machine identities — a service logs in
+        Project credentials are <strong>AppRole</strong> machine identities — a service logs in
         with a <code>role_id</code> + <code>secret_id</code> to get a short-lived, scoped
         token. One credential is created <strong>per environment</strong> for isolation.
       </p>
@@ -47,7 +47,7 @@ export default function AppCredentialsPage() {
         <ul className="divide-y rounded-md border">
           {list.map((c) => (
             <li key={credKey(c)} className="flex flex-wrap items-center gap-2 px-3 py-2 text-sm">
-              <span className="font-mono font-medium">{c.app}</span>
+              <span className="font-mono font-medium">{c.project}</span>
               <Badge variant="muted">{c.level === "viewer" ? "read-only" : "read/write"}</Badge>
               <span className="truncate text-xs text-muted-foreground">
                 {c.roles.length} env{c.roles.length === 1 ? "" : "s"}: {c.roles.map((r) => r.env).join(", ")}
@@ -66,7 +66,7 @@ export default function AppCredentialsPage() {
       ) : (
         <EmptyState
           icon={KeyRound}
-          title="No app credentials yet"
+          title="No project credentials yet"
           description="Issue a credential to give a service its own scoped, short-lived token (instead of a human/root token)."
         />
       )}
@@ -88,8 +88,8 @@ export default function AppCredentialsPage() {
             // Keep the dialog and definition available for retry; show the error below.
           }
         }}
-        title="Revoke app credential"
-        description={`Deletes the ${revoking?.roles.length ?? 0} AppRole(s) + policies for "${revoking?.app}". Any service still using them will stop receiving tokens.`}
+        title="Revoke project credential"
+        description={`Deletes the ${revoking?.roles.length ?? 0} AppRole(s) + policies for "${revoking?.project}". Any service still using them will stop receiving tokens.`}
         confirmLabel="Revoke"
         pending={revoke.isPending}
         error={revoke.error instanceof Error ? revoke.error.message : null}
@@ -98,7 +98,7 @@ export default function AppCredentialsPage() {
   );
 }
 
-function RotateDialog({ cred, onClose }: { cred: AppCredential; onClose: () => void }) {
+function RotateDialog({ cred, onClose }: { cred: ProjectCredential; onClose: () => void }) {
   const rotate = useRotateSecretId();
   const [results, setResults] = React.useState<{ env: string; role: string; secretId: string }[] | null>(null);
   const [error, setError] = React.useState<string | null>(null);
@@ -125,7 +125,7 @@ function RotateDialog({ cred, onClose }: { cred: AppCredential; onClose: () => v
   return (
     <Dialog open onClose={onClose} className="max-w-xl">
       <DialogHeader
-        title={`Rotate secret_id — ${cred.app}`}
+        title={`Rotate secret_id — ${cred.project}`}
         description="A fresh secret_id per environment, shown once. Update your services, then the old one can be removed."
         onClose={onClose}
       />

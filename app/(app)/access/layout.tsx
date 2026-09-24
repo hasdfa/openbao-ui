@@ -14,7 +14,7 @@ export default function AccessLayout({
   const TABS = [
     { href: "/access", label: "Policies", show: can("sys/policies/acl") },
     { href: "/access/auth", label: "Auth Methods", show: can("sys/auth") },
-    { href: "/access/app-credentials", label: "App credentials", show: can("sys/auth") },
+    { href: "/access/project-credentials", label: "Project credentials", show: can("sys/auth") },
     { href: "/access/team", label: "Team", show: can("identity/group/id") },
     { href: "/access/identity", label: "Identity", show: can("identity/entity/id") },
     { href: "/access/mfa", label: "MFA", show: can("identity/mfa/method/totp") },

@@ -14,38 +14,38 @@ import { Label } from "@/components/ui/label";
 import { buildAccessPolicy, type AccessLevel } from "@/lib/access-policy";
 import {
   envIdent,
-  useIssueAppCredential,
-  type AppCredential,
+  useIssueProjectCredential,
+  type ProjectCredential,
   type IssuedCred,
-} from "@/lib/app-credentials";
+} from "@/lib/project-credentials";
 import { resolveEnvs, type EnvSelector } from "@/lib/access-roles";
 import { buildSnippets } from "@/lib/guides";
 
 const LEVELS: AccessLevel[] = ["viewer", "editor"];
 
 /**
- * Wizard to issue an app credential: pick app + environments + permission, see
+ * Wizard to issue a project credential: pick project + environments + permission, see
  * the access + the per-env AppRoles it will create, then reveal role_id/secret_id
  * once with a ready-to-paste login snippet.
  */
 export function IssueCredentialDialog({
   existing,
-  initialApp,
+  initialProject,
   initialPaths,
   onClose,
 }: {
-  existing: AppCredential[];
-  initialApp?: string;
+  existing: ProjectCredential[];
+  initialProject?: string;
   initialPaths?: string[];
   onClose: () => void;
 }) {
-  const issue = useIssueAppCredential();
+  const issue = useIssueProjectCredential();
 
-  const [app, setApp] = React.useState(initialApp ?? "");
+  const [project, setProject] = React.useState(initialProject ?? "");
   const [level, setLevel] = React.useState<AccessLevel>("viewer");
   const [env, setEnv] = React.useState<EnvSelector>({ kind: "mounts", mounts: [] });
   const [paths, setPaths] = React.useState<string[]>(
-    initialPaths ?? (initialApp ? [`${initialApp}/*`] : []),
+    initialPaths ?? (initialProject ? [`${initialProject}/*`] : []),
   );
   const [ttl, setTtl] = React.useState("1h");
   const [mount, setMount] = React.useState("approle");
@@ -53,7 +53,7 @@ export function IssueCredentialDialog({
   const [issued, setIssued] = React.useState<IssuedCred[] | null>(null);
 
   const envs = resolveEnvs(env);
-  const cleanApp = app.trim();
+  const cleanProject = project.trim();
   let preview = "";
   let previewError: string | null = null;
   try {
@@ -61,12 +61,12 @@ export function IssueCredentialDialog({
   } catch (err) {
     previewError = err instanceof Error ? err.message : "Invalid policy scope";
   }
-  const roleEnvironments = cleanApp ? envs.map(envIdent) : [];
+  const roleEnvironments = cleanProject ? envs.map(envIdent) : [];
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    if (!/^[a-zA-Z0-9_.-]+$/.test(cleanApp)) {
+    if (!/^[a-zA-Z0-9_.-]+$/.test(cleanProject)) {
       setError("Client name is required (letters, numbers, _ . -)");
       return;
     }
@@ -79,7 +79,7 @@ export function IssueCredentialDialog({
       return;
     }
     try {
-      const res = await issue.mutateAsync({ app: cleanApp, env, level, mount, ttl, paths, existing });
+      const res = await issue.mutateAsync({ project: cleanProject, env, level, mount, ttl, paths, existing });
       setIssued(res.issued);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to issue credential");
@@ -113,7 +113,7 @@ export function IssueCredentialDialog({
               <CredRow label="role_id" value={c.roleId} />
               <CredRow label="secret_id" value={c.secretId} />
               <Disclosure label="Use it in your app" className="mt-2">
-                <Snippet app={cleanApp} env={c.env} mount={c.mount} roleId={c.roleId} secretId={c.secretId} />
+                <Snippet project={cleanProject} env={c.env} mount={c.mount} roleId={c.roleId} secretId={c.secretId} />
               </Disclosure>
             </div>
           ))}
@@ -129,14 +129,14 @@ export function IssueCredentialDialog({
   return (
     <Dialog open onClose={onClose} className="max-w-2xl">
       <DialogHeader
-        title="Issue app credential"
+        title="Issue project credential"
         description="Creates an isolated AppRole (machine identity) per environment, scoped to the secret paths you pick. Your service logs in with role_id + secret_id to get a short-lived token."
         onClose={onClose}
       />
       <form className="flex flex-col gap-4" onSubmit={submit}>
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Client name">
-            <Input value={app} onChange={(e) => setApp(e.target.value)} className="font-mono" placeholder="backend" autoFocus disabled={!!initialApp} />
+            <Input value={project} onChange={(e) => setProject(e.target.value)} className="font-mono" placeholder="backend" autoFocus disabled={!!initialProject} />
           </Field>
           <Field label="Permission">
             <Segmented
@@ -177,7 +177,7 @@ export function IssueCredentialDialog({
         <div className="flex flex-col gap-1">
           <Label>Access granted</Label>
           <pre className="max-h-40 overflow-auto rounded-md border bg-muted/40 p-3 text-xs leading-relaxed">
-            <code>{preview || "Pick an app + environments to preview the policy."}</code>
+            <code>{preview || "Pick a project + environments to preview the policy."}</code>
           </pre>
         </div>
 
@@ -213,13 +213,13 @@ export function CredRow({ label, value }: { label: string; value: string }) {
 }
 
 function Snippet({
-  app,
+  project,
   env,
   mount,
   roleId,
   secretId,
 }: {
-  app: string;
+  project: string;
   env: string;
   mount: string;
   roleId: string;
@@ -233,7 +233,7 @@ export SECRET_ID="${secretId}"
 export BAO_TOKEN=$(bao write -field=token auth/${mount}/login \\
   role_id="$ROLE_ID" secret_id="$SECRET_ID")
 
-bao kv get -mount=${env} ${app}/config`;
+bao kv get -mount=${env} ${project}/config`;
   return (
     <div className="overflow-hidden rounded-md border bg-card">
       <div className="flex items-center justify-between border-b bg-muted/40 px-3 py-1.5">

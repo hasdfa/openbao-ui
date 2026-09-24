@@ -18,8 +18,8 @@ export type EnvOption = {
   color: string | null;
 };
 
-export type AppOption = {
-  app: string; // folder name — the OpenBao truth
+export type ProjectOption = {
+  project: string; // folder name — the OpenBao truth
   name: string; // friendly label, or the folder name
   labeled: boolean;
   color: string | null;
@@ -32,39 +32,40 @@ export type EnvPresence = {
   reachable: boolean; // false = listing failed for a reason other than 404
 };
 
+// A chevron, not a slash: these two chips read project-then-environment, which
+// is the reverse of the path underneath. A "/" here would claim the path is
+// "backend/production" when OpenBao stores "production/backend".
 const sep = (
-  <span aria-hidden className="select-none text-base text-muted-foreground/50">
-    /
-  </span>
+  <ChevronRight aria-hidden className="size-3.5 shrink-0 text-muted-foreground/50" />
 );
 
 /**
- * The scope spine: environment and app read as switchable chips on the first
- * line, the literal OpenBao path underneath. Switching environment or app keeps
- * the rest of the path, which is the whole point — the same key in staging is
- * one click away, not a trip back through the index.
+ * The scope spine: project and environment read as switchable chips on the
+ * first line, the literal OpenBao path underneath. You hold one project in your
+ * head and hop between its environments, so the project leads — the same key in
+ * staging is one click away, not a trip back through the index.
  */
 export function KvScopeBar({
   mount,
   segments,
   envs,
-  apps,
+  projects,
   presence,
   actions,
 }: {
   mount: string;
   segments: string[];
   envs: EnvOption[];
-  apps: AppOption[];
+  projects: ProjectOption[];
   presence: Record<string, EnvPresence>;
   actions?: React.ReactNode;
 }) {
   const router = useRouter();
   const current = envs.find((e) => e.mount === mount);
-  const appSeg = segments[0];
-  const appOpt = appSeg ? apps.find((a) => a.app === appSeg) : undefined;
-  const rest = segments.slice(1);
-  const fullPath = [mount, ...segments].join("/");
+  const projectSeg = segments[0];
+  const projectOpt = projects.find((p) => p.project === projectSeg);
+  const pathSegs = [mount, ...segments];
+  const fullPath = pathSegs.join("/");
 
   const hrefFor = (m: string) => `/secrets/${[m, ...segments].join("/")}`;
 
@@ -73,7 +74,70 @@ export function KvScopeBar({
       <div className="flex items-start justify-between gap-3">
         {/* The menu triggers carry their own padding; pulling the row left by
             that much puts the dot, the path and the strip on one left edge. */}
+        {/* Only the two switchers live here. Anything deeper stays in the mono
+            breadcrumb below, where it can keep real path order. */}
         <div className="-ml-1.5 flex min-w-0 flex-wrap items-center gap-x-0.5 gap-y-1">
+          {/* project (the first folder under the mount) — leads the row */}
+          {projectSeg ? (
+            <>
+              <Menu
+                label="Switch project"
+                width={280}
+                trigger={
+                  <>
+                    {projectOpt?.color ? (
+                      <ColorDot color={projectOpt.color} className="size-2.5 shrink-0" />
+                    ) : (
+                      <Package className="size-3.5 shrink-0 text-muted-foreground" />
+                    )}
+                    <span
+                      className={cn(
+                        "max-w-[14rem] truncate text-[15px] font-semibold tracking-tight",
+                        !projectOpt?.labeled && "font-mono",
+                      )}
+                    >
+                      {projectOpt?.name ?? projectSeg}
+                    </span>
+                    <ChevronDown className="size-3.5 shrink-0 text-muted-foreground transition-transform duration-150 group-aria-expanded:rotate-180" />
+                  </>
+                }
+              >
+                {(close) => (
+                  <>
+                    <MenuLabel>Projects in this environment</MenuLabel>
+                    {projects.length === 0 ? (
+                      <p className="px-2 py-2 text-sm text-muted-foreground">
+                        No project folders found here.
+                      </p>
+                    ) : null}
+                    {projects.map((p) => (
+                      <MenuItem
+                        key={p.project}
+                        current={p.project === projectSeg}
+                        onSelect={() => {
+                          close();
+                          router.push(`/secrets/${mount}/${p.project}`);
+                        }}
+                      >
+                        <ColorDot color={p.color} className="size-2 shrink-0" />
+                        <span className="min-w-0 flex-1 truncate">{p.name}</span>
+                        {p.labeled ? (
+                          <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
+                            {p.project}
+                          </span>
+                        ) : null}
+                        {p.project === projectSeg ? (
+                          <Check className="size-3.5 shrink-0 text-primary" />
+                        ) : null}
+                      </MenuItem>
+                    ))}
+                  </>
+                )}
+              </Menu>
+              {sep}
+            </>
+          ) : null}
+
           {/* environment */}
           <Menu
             label="Switch environment"
@@ -98,7 +162,9 @@ export function KvScopeBar({
           >
             {(close) => (
               <>
-                <MenuLabel>Environments</MenuLabel>
+                <MenuLabel>
+                  {projectSeg ? "Environments for this project" : "Environments"}
+                </MenuLabel>
                 {envs.map((env) => {
                   const p = presence[env.mount];
                   return (
@@ -129,80 +195,6 @@ export function KvScopeBar({
               </>
             )}
           </Menu>
-
-          {/* app (the first folder under the mount) */}
-          {appSeg ? (
-            <>
-              {sep}
-              <Menu
-                label="Switch app"
-                width={280}
-                trigger={
-                  <>
-                    {appOpt?.color ? (
-                      <ColorDot color={appOpt.color} className="size-2.5 shrink-0" />
-                    ) : (
-                      <Package className="size-3.5 shrink-0 text-muted-foreground" />
-                    )}
-                    <span
-                      className={cn(
-                        "max-w-[14rem] truncate text-[15px] font-semibold tracking-tight",
-                        !appOpt?.labeled && "font-mono",
-                      )}
-                    >
-                      {appOpt?.name ?? appSeg}
-                    </span>
-                    <ChevronDown className="size-3.5 shrink-0 text-muted-foreground transition-transform duration-150 group-aria-expanded:rotate-180" />
-                  </>
-                }
-              >
-                {(close) => (
-                  <>
-                    <MenuLabel>Apps in this environment</MenuLabel>
-                    {apps.length === 0 ? (
-                      <p className="px-2 py-2 text-sm text-muted-foreground">
-                        No app folders found here.
-                      </p>
-                    ) : null}
-                    {apps.map((a) => (
-                      <MenuItem
-                        key={a.app}
-                        current={a.app === appSeg}
-                        onSelect={() => {
-                          close();
-                          router.push(`/secrets/${mount}/${a.app}`);
-                        }}
-                      >
-                        <ColorDot color={a.color} className="size-2 shrink-0" />
-                        <span className="min-w-0 flex-1 truncate">{a.name}</span>
-                        {a.labeled ? (
-                          <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
-                            {a.app}
-                          </span>
-                        ) : null}
-                        {a.app === appSeg ? (
-                          <Check className="size-3.5 shrink-0 text-primary" />
-                        ) : null}
-                      </MenuItem>
-                    ))}
-                  </>
-                )}
-              </Menu>
-            </>
-          ) : null}
-
-          {/* anything deeper is plain navigation */}
-          {rest.map((seg, i) => (
-            <React.Fragment key={i}>
-              {sep}
-              <Link
-                href={`/secrets/${[mount, ...segments.slice(0, i + 2)].join("/")}`}
-                className="max-w-[12rem] truncate rounded-md px-1.5 py-1 font-mono text-[15px] font-medium text-muted-foreground transition-colors duration-150 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-              >
-                {seg}
-              </Link>
-            </React.Fragment>
-          ))}
         </div>
 
         {actions ? (
@@ -217,11 +209,11 @@ export function KvScopeBar({
             Without this the mount root has no affordance at all. */}
         <span className="flex min-w-0 items-center gap-0.5">
           <span className="flex min-w-0 items-center truncate font-mono text-xs text-muted-foreground">
-            {[mount, ...segments].map((seg, i) => (
+            {pathSegs.map((seg, i) => (
               <React.Fragment key={i}>
                 {i > 0 ? <span aria-hidden>/</span> : null}
                 <Link
-                  href={`/secrets/${[mount, ...segments].slice(0, i + 1).join("/")}`}
+                  href={`/secrets/${pathSegs.slice(0, i + 1).join("/")}`}
                   className="truncate rounded-sm py-0.5 transition-colors duration-150 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
                 >
                   {seg}
@@ -270,7 +262,7 @@ function PresenceNote({ presence }: { presence?: EnvPresence }) {
 /**
  * Every environment at the current path, side by side: how many keys each one
  * holds here and which are missing it entirely. This is the "see all envs for
- * one app" view — one row, always in the same order, never hidden behind a tab.
+ * one project" view — one row, always in the same order, never hidden behind a tab.
  */
 function EnvironmentStrip({
   mount,

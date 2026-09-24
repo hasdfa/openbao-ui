@@ -7,19 +7,19 @@ import { safeAuthMount, safeBaoName } from "@/lib/oidc-domains";
 import { isOperator } from "@/lib/ui-admin";
 
 /**
- * Definitions of issued app credentials (AppRole machine identities), per
- * namespace. Stores ONLY the non-secret definition — app, env selector, level,
+ * Definitions of issued project credentials (AppRole machine identities), per
+ * namespace. Stores ONLY the non-secret definition — project, env selector, level,
  * and the materialized role/policy names — so they can be listed, rotated, and
  * revoked. The secret_id is shown once at issue/rotate time and is NEVER stored.
- *   GET /ui2/api/app-credentials  — authenticated
- *   PUT /ui2/api/app-credentials  — operator only (namespace from header)
+ *   GET /ui2/api/project-credentials  — authenticated
+ *   PUT /ui2/api/project-credentials  — operator only (namespace from header)
  */
 export const dynamic = "force-dynamic";
 
 function invalidStoredCredential(raw: unknown): string | null {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return "credential must be an object";
   const cred = raw as Record<string, unknown>;
-  if (!safeBaoName(typeof cred.app === "string" ? cred.app : "")) return "invalid app name";
+  if (!safeBaoName(typeof cred.project === "string" ? cred.project : "")) return "invalid project name";
   if (!safeAuthMount(typeof cred.mount === "string" ? cred.mount : "")) return "invalid AppRole mount";
   if (!Array.isArray(cred.roles)) return "roles must be an array";
   for (const row of cred.roles) {
@@ -31,7 +31,7 @@ function invalidStoredCredential(raw: unknown): string | null {
   return null;
 }
 
-const key = (ns: string) => `app-credentials::${ns}`;
+const key = (ns: string) => `project-credentials::${ns}`;
 
 export async function GET(req: NextRequest) {
   const auth = await authorizeMetadata(req);

@@ -7,7 +7,7 @@ import * as React from "react";
 
 import {
   KvScopeBar,
-  type AppOption,
+  type ProjectOption,
   type EnvOption,
   type EnvPresence,
 } from "@/components/kv/kv-scope";
@@ -131,18 +131,21 @@ function ScopedKvBrowser({
   // there" and, per row, "does this exact key exist there".
   const across: CrossEnv = useKvListAcross(otherEnvs, folder);
 
-  // Apps are the folders at the mount root; at the root this is the same query.
+  // Projects are the folders at the mount root; at the root this is the same
+  // query. Deliberately scoped to this environment rather than useProjects():
+  // listing every mount to surface projects absent from here would cost one
+  // LIST per environment for a switcher most people use within one env.
   const rootList = useKvList(mount, "");
-  const apps = React.useMemo<AppOption[]>(
+  const projects = React.useMemo<ProjectOption[]>(
     () =>
       (rootList.data ?? [])
         .filter((k) => k.endsWith("/"))
         .map((k) => {
-          const app = k.replace(/\/$/, "");
-          const lbl = labels?.[labelKey("application", app)];
+          const project = k.replace(/\/$/, "");
+          const lbl = labels?.[labelKey("project", project)];
           return {
-            app,
-            name: lbl?.label || app,
+            project,
+            name: lbl?.label || project,
             labeled: !!lbl?.label,
             color: lbl?.color ?? null,
           };
@@ -202,7 +205,7 @@ function ScopedKvBrowser({
           mount={mount}
           segments={folderSegs}
           envs={envs}
-          apps={apps}
+          projects={projects}
           presence={presence}
           actions={
             <Button size="sm" onClick={() => setCreating(true)}>

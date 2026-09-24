@@ -7,7 +7,7 @@ image**.
 
 ## Screenshots
 
-Create a **shareable, app-scoped access group** across an environment group —
+Create a **shareable, project-scoped access group** across an environment group —
 with a live preview of the exact OpenBao policy it generates:
 
 ![Creating a shareable access group](docs/screenshots/walkthrough.gif)
@@ -20,7 +20,7 @@ token in production — the guide is wired to your environment and secret path:
 |  |  |
 | --- | --- |
 | ![Overview](docs/screenshots/overview.png)<br/>**Overview** — seal status, token policies, engines | ![Secrets & environment groups](docs/screenshots/secrets.png)<br/>**Secrets** — environments, colors & shareable env groups |
-| ![Scoped access builder](docs/screenshots/grant-access.png)<br/>**Grant access** — env group × app × level → policy + group | ![Team](docs/screenshots/team.png)<br/>**Team** — scoped roles + member assignment |
+| ![Scoped access builder](docs/screenshots/grant-access.png)<br/>**Grant access** — env group × project × level → policy + group | ![Team](docs/screenshots/team.png)<br/>**Team** — scoped roles + member assignment |
 | ![App identity guide](docs/screenshots/guides-app-identity.png)<br/>**Guides** — app identity (AppRole) setup + snippets | ![Secret detail](docs/screenshots/secret-detail.png)<br/>**Secret** — KV value view |
 
 ## Architecture
@@ -167,7 +167,7 @@ talks to OpenBao live through the proxy:
 
 **Access**
 - **Team** — members (identity entities), role templates, and **scoped access
-  roles**: grant an env group + app at a chosen level with a **live preview of the
+  roles**: grant an env group + project at a chosen level with a **live preview of the
   exact policy**, materialized as a real OpenBao policy + identity group
 - **Auth methods** — enable/configure userpass, LDAP, AppRole, and a guided
   **Google (OIDC) sign-in wizard**

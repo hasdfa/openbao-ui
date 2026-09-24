@@ -8,31 +8,31 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { GrantAccessDialog } from "@/components/grant-access-dialog";
 import { IssueCredentialDialog } from "@/components/issue-credential-dialog";
 import { ColorDot, LabelEditor } from "@/components/label-editor";
-import { NewAppDialog } from "@/components/new-app-dialog";
+import { NewProjectDialog } from "@/components/new-project-dialog";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAccessRoles } from "@/lib/access-roles";
-import { useAppCredentials } from "@/lib/app-credentials";
-import { useApps, useDeleteApp, type AppInfo } from "@/lib/apps";
+import { useProjectCredentials } from "@/lib/project-credentials";
+import { useProjects, useDeleteProject, type ProjectInfo } from "@/lib/projects";
 import { labelKey, useLabels } from "@/lib/labels";
 import { cn } from "@/lib/utils";
 
-export default function AppsPage() {
-  const { apps, isLoading, kvMounts } = useApps();
+export default function ProjectsPage() {
+  const { projects, isLoading, kvMounts } = useProjects();
   const { data: labels } = useLabels();
   const accessRoles = useAccessRoles();
-  const appCreds = useAppCredentials();
-  const remove = useDeleteApp();
+  const projectCreds = useProjectCredentials();
+  const remove = useDeleteProject();
   const envName = (m: string) => labels?.[labelKey("environment", `${m}/`)]?.label || m;
 
   const [creating, setCreating] = React.useState(false);
   const [issuing, setIssuing] = React.useState<string | null>(null);
   const [granting, setGranting] = React.useState<string | null>(null);
   const [editing, setEditing] = React.useState<string | null>(null);
-  const [deleting, setDeleting] = React.useState<AppInfo | null>(null);
+  const [deleting, setDeleting] = React.useState<ProjectInfo | null>(null);
   const [deleteError, setDeleteError] = React.useState<string | null>(null);
 
   return (
@@ -40,10 +40,10 @@ export default function AppsPage() {
       <PageHeader
         title={
           <span className="flex items-center gap-2">
-            <Package className="size-6" /> Apps
+            <Package className="size-6" /> Projects
           </span>
         }
-        description="Your applications — folders of secrets across environments. Issue credentials or grant access per app."
+        description="Your projects — folders of secrets across environments. Issue credentials or grant access per project."
         className="mb-6"
         actions={
           <>
@@ -53,7 +53,7 @@ export default function AppsPage() {
               </Button>
             </Link>
             <Button size="sm" onClick={() => setCreating(true)}>
-              <Plus /> New app
+              <Plus /> New project
             </Button>
           </>
         }
@@ -68,17 +68,17 @@ export default function AppsPage() {
             </li>
           ))}
         </ul>
-      ) : apps.length === 0 ? (
+      ) : projects.length === 0 ? (
         <EmptyState
           icon={Package}
-          title="No apps yet"
-          description="Apps are top-level folders inside your environments (e.g. payments/). Add one, or create a secret under a new folder."
+          title="No projects yet"
+          description="Projects are top-level folders inside your environments (e.g. payments/). Add one, or create a secret under a new folder."
         />
       ) : (
         <ul className="grid gap-3 sm:grid-cols-2">
-          {apps.map((a) => (
+          {projects.map((a) => (
             <li
-              key={a.app}
+              key={a.project}
               className="flex flex-col gap-3 rounded-xl border bg-card p-4"
             >
               <div className="flex items-start gap-3">
@@ -88,8 +88,8 @@ export default function AppsPage() {
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     {a.label?.color ? <ColorDot color={a.label.color} className="size-2.5 shrink-0" /> : null}
-                    <span className="font-medium">{a.label?.label || a.app}</span>
-                    {a.label?.label ? <Badge variant="muted" className="font-mono">{a.app}</Badge> : null}
+                    <span className="font-medium">{a.label?.label || a.project}</span>
+                    {a.label?.label ? <Badge variant="muted" className="font-mono">{a.project}</Badge> : null}
                   </div>
                   <p className="mt-0.5 truncate text-xs text-muted-foreground">
                     {a.label?.description || `${a.envs.length || "no"} environment${a.envs.length === 1 ? "" : "s"}`}
@@ -101,9 +101,9 @@ export default function AppsPage() {
                     variant="ghost"
                     size="icon"
                     className="size-11 text-muted-foreground md:size-9"
-                    title="Edit app"
-                    aria-label={`Edit ${a.app}`}
-                    onClick={() => setEditing(a.app)}
+                    title="Edit project"
+                    aria-label={`Edit ${a.project}`}
+                    onClick={() => setEditing(a.project)}
                   >
                     <Pencil />
                   </Button>
@@ -112,8 +112,8 @@ export default function AppsPage() {
                     variant="ghost"
                     size="icon"
                     className="size-11 text-muted-foreground hover:text-destructive md:size-9"
-                    title="Delete app"
-                    aria-label={`Delete ${a.app}`}
+                    title="Delete project"
+                    aria-label={`Delete ${a.project}`}
                     onClick={() => {
                       setDeleteError(null);
                       setDeleting(a);
@@ -140,15 +140,15 @@ export default function AppsPage() {
               </div>
 
               <div className="mt-auto flex flex-wrap gap-2 border-t pt-3">
-                <Button size="sm" variant="outline" onClick={() => setIssuing(a.app)}>
+                <Button size="sm" variant="outline" onClick={() => setIssuing(a.project)}>
                   <KeyRound /> Issue credential
                 </Button>
-                <Button size="sm" variant="outline" onClick={() => setGranting(a.app)}>
+                <Button size="sm" variant="outline" onClick={() => setGranting(a.project)}>
                   <ShieldCheck /> Grant access
                 </Button>
                 {a.envs[0] ? (
                   <Link
-                    href={`/secrets/${a.envs[0]}/${a.app}`}
+                    href={`/secrets/${a.envs[0]}/${a.project}`}
                     className={cn(buttonVariants({ size: "sm", variant: "ghost" }), "ml-auto")}
                   >
                     Open
@@ -160,20 +160,20 @@ export default function AppsPage() {
         </ul>
       )}
 
-      {creating ? <NewAppDialog onClose={() => setCreating(false)} /> : null}
+      {creating ? <NewProjectDialog onClose={() => setCreating(false)} /> : null}
       {issuing ? (
-        <IssueCredentialDialog existing={appCreds.data ?? []} initialApp={issuing} onClose={() => setIssuing(null)} />
+        <IssueCredentialDialog existing={projectCreds.data ?? []} initialProject={issuing} onClose={() => setIssuing(null)} />
       ) : null}
       {granting ? (
-        <GrantAccessDialog existing={accessRoles.data ?? []} initialApp={granting} onClose={() => setGranting(null)} />
+        <GrantAccessDialog existing={accessRoles.data ?? []} initialProject={granting} onClose={() => setGranting(null)} />
       ) : null}
       {editing ? (
         <LabelEditor
           open
           onClose={() => setEditing(null)}
-          scope="application"
+          scope="project"
           refPath={editing}
-          current={labels?.[labelKey("application", editing)]}
+          current={labels?.[labelKey("project", editing)]}
           nativeName={editing}
         />
       ) : null}
@@ -185,20 +185,20 @@ export default function AppsPage() {
           setDeleteError(null);
           try {
             await remove.mutateAsync({
-              app: deleting.app,
+              project: deleting.project,
               envs: kvMounts.filter((env) => deleting.envs.includes(env.mount)),
             });
             setDeleting(null);
           } catch (err) {
-            setDeleteError(err instanceof Error ? err.message : "Failed to delete app");
+            setDeleteError(err instanceof Error ? err.message : "Failed to delete project");
           }
         }}
-        title="Delete app"
-        description={`Permanently deletes every secret under "${deleting?.app}/" in ${
+        title="Delete project"
+        description={`Permanently deletes every secret under "${deleting?.project}/" in ${
           deleting?.envs.length ? deleting.envs.map(envName).join(", ") : "no environments"
-        }, then unregisters the app.`}
-        confirmText={deleting?.app}
-        confirmLabel="Delete app"
+        }, then unregisters the project.`}
+        confirmText={deleting?.project}
+        confirmLabel="Delete project"
         pending={remove.isPending}
         error={deleteError}
       />

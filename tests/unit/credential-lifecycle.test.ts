@@ -6,11 +6,11 @@ vi.mock("@/lib/bao-client", async (importOriginal) => ({
 }));
 
 import { baoFetch, BaoError } from "@/lib/bao-client";
-import { deleteCredentialResources, assertCredentialNamesAvailable, type AppCredential } from "@/lib/app-credentials";
+import { deleteCredentialResources, assertCredentialNamesAvailable, type ProjectCredential } from "@/lib/project-credentials";
 
 const fetchBao = vi.mocked(baoFetch);
-const cred: AppCredential = {
-  app: "api", level: "viewer", env: { kind: "mounts", mounts: ["prod"] },
+const cred: ProjectCredential = {
+  project: "api", level: "viewer", env: { kind: "mounts", mounts: ["prod"] },
   mount: "approle", paths: ["api/*"], createdAt: 1,
   roles: [{ env: "prod", role: "legacy-api-prod", policy: "legacy-api-read" }],
 };

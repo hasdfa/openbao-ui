@@ -16,10 +16,13 @@ test("login and browse the KV engine", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
   await expect(page.getByText("Unsealed")).toBeVisible();
 
-  // navigate to the secret engine list and into the KV mount
+  // navigate to the secret engine list and into the KV mount. The environment
+  // column header is the route to a mount root now that projects lead the page.
+  // Matched by href, not by name: the header shows the environment's friendly
+  // label when one is set, which differs per instance.
   await page.getByRole("link", { name: "Secrets" }).click();
-  await expect(page.getByText("secret/")).toBeVisible();
-  await page.getByRole("link", { name: "secret/" }).click();
+  await page.locator('a[href="/ui2/secrets/secret"]').first().click();
+  await expect(page).toHaveURL(/\/ui2\/secrets\/secret$/);
 
   // the KV browser renders (breadcrumb shows the mount)
   await expect(page.getByRole("link", { name: "secret", exact: true })).toBeVisible();
@@ -229,8 +232,12 @@ test("environments: customize a friendly display name", async ({ page }) => {
   await page.fill("#lbl-name", friendly);
   await page.getByRole("button", { name: "Save" }).click();
 
-  // the friendly name replaces the raw mount path as the environment title
-  await expect(page.getByRole("link", { name: friendly })).toBeVisible();
+  // The friendly name replaces the raw mount path as the environment title.
+  // It now names two links — the projects-matrix column header and the rail
+  // card — so match the rail's, which is the one this test renamed.
+  await expect(
+    page.getByRole("link", { name: `${friendly} kv v2` }),
+  ).toBeVisible();
 });
 
 test("settings: profile, preferences, namespaces", async ({ page }) => {
@@ -397,17 +404,17 @@ test("team: grant scoped access (app-specific role) with live policy preview", a
   await expect(page.getByText(role)).toBeVisible();
 });
 
-test("access: issue an app credential reveals role_id/secret_id", async ({ page }) => {
-  const app = `svc${Date.now()}`;
+test("access: issue a project credential reveals role_id/secret_id", async ({ page }) => {
+  const project = `svc${Date.now()}`;
   await page.goto("/");
   await page.fill("#token", TOKEN);
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
 
-  await page.goto("/ui2/access/app-credentials");
+  await page.goto("/ui2/access/project-credentials");
   await page.getByRole("button", { name: "Issue credential" }).click();
   const dialog = page.getByRole("dialog");
-  await dialog.getByPlaceholder("backend").fill(app);
+  await dialog.getByPlaceholder("backend").fill(project);
   // scope to a specific environment (the dev `secret` mount is always present)
   await dialog.getByRole("button", { name: "Specific environments" }).click();
   await dialog.getByRole("checkbox").first().check();
@@ -421,24 +428,24 @@ test("access: issue an app credential reveals role_id/secret_id", async ({ page 
   await expect(page.getByText("secret_id").first()).toBeVisible();
   await page.getByRole("button", { name: "Done" }).click();
   // the credential is now listed
-  await expect(page.getByText(app, { exact: true })).toBeVisible();
+  await expect(page.getByText(project, { exact: true })).toBeVisible();
 });
 
-test("secrets: apps view + register a new app", async ({ page }) => {
-  const app = `app${Date.now()}`;
+test("secrets: projects view + register a new project", async ({ page }) => {
+  const project = `project${Date.now()}`;
   await page.goto("/");
   await page.fill("#token", TOKEN);
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
 
-  await page.goto("/ui2/secrets/apps");
-  await expect(page.getByRole("heading", { name: "Apps" })).toBeVisible();
-  await page.getByRole("button", { name: "New app" }).click();
+  await page.goto("/ui2/secrets/projects");
+  await expect(page.getByRole("heading", { name: "Projects" })).toBeVisible();
+  await page.getByRole("button", { name: "New project" }).click();
   const dialog = page.getByRole("dialog");
-  await dialog.getByPlaceholder("payments", { exact: true }).fill(app);
-  await dialog.getByRole("button", { name: "Create app" }).click();
-  // the registered app shows up in the grid
-  await expect(page.getByText(app, { exact: true })).toBeVisible();
+  await dialog.getByPlaceholder("payments", { exact: true }).fill(project);
+  await dialog.getByRole("button", { name: "Create project" }).click();
+  // the registered project shows up in the grid
+  await expect(page.getByText(project, { exact: true })).toBeVisible();
 });
 
 test("auth: Google sign-in wizard renders", async ({ page }) => {

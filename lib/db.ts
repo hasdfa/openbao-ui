@@ -13,17 +13,17 @@
  * Uses Node's built-in `node:sqlite` (no native dependency, no extra image
  * layers). Available unflagged on the Node 22 the runtime image ships.
  */
-import { mkdirSync } from "node:fs";
+import { mkdirSync, renameSync, rmSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
-export type LabelScope = "workspace" | "environment" | "application";
+export type LabelScope = "workspace" | "environment" | "project";
 
 /** A friendly-naming row keyed to a native OpenBao path. */
 export type Label = {
   namespace: string; // OpenBao namespace the ref lives in ("" = root)
-  scope: LabelScope; // workspace=namespace, environment=mount, application=path
-  ref: string; // the native key (namespace path, mount path, or app path)
+  scope: LabelScope; // workspace=namespace, environment=mount, project=path
+  ref: string; // the native key (namespace path, mount path, or project path)
   label: string | null;
   description: string | null;
   color: string | null;
@@ -51,12 +51,35 @@ function db(): DatabaseSync {
   d.exec(
     "PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON;",
   );
-  migrate(d);
+  try {
+    migrate(d, path);
+  } catch (err) {
+    // _db is only assigned on success, so without this an open handle leaks on
+    // every request that retries after a failed migration.
+    d.close();
+    throw err;
+  }
   _db = d;
   return d;
 }
 
-function migrate(d: DatabaseSync) {
+/** Current on-disk schema. Bump whenever migrate() gains a step. */
+const SCHEMA_VERSION = 2;
+
+function userVersion(d: DatabaseSync): number {
+  // A PRAGMA read comes back as a single row named after the pragma.
+  const row = d.prepare("PRAGMA user_version").get() as { user_version: number };
+  return row.user_version;
+}
+
+function setUserVersion(d: DatabaseSync, v: number) {
+  // "PRAGMA user_version = ?" is a syntax error — SQLite wants a literal here.
+  // v is a module constant, never caller input; the guard keeps it that way.
+  if (!Number.isInteger(v)) throw new Error("schema version must be an integer");
+  d.exec(`PRAGMA user_version = ${v}`);
+}
+
+function ensureSchema(d: DatabaseSync) {
   d.exec(`
     CREATE TABLE IF NOT EXISTS labels (
       namespace   TEXT NOT NULL,
@@ -75,6 +98,178 @@ function migrate(d: DatabaseSync) {
       updated_at INTEGER NOT NULL
     );
   `);
+}
+
+/**
+ * A brand-new store has no tables yet. Probed through sqlite_master rather than
+ * the filesystem: opening the connection and setting journal_mode = WAL has
+ * already created the file by the time we get here.
+ */
+function isFreshDatabase(d: DatabaseSync): boolean {
+  const row = d
+    .prepare(
+      "SELECT count(*) AS n FROM sqlite_master WHERE type = 'table' AND name IN ('labels', 'config')",
+    )
+    .get() as { n: number };
+  return row.n === 0;
+}
+
+/**
+ * Snapshot the store beside itself before a destructive migration. VACUUM INTO
+ * writes one consistent file (WAL folded in, no -wal/-shm sidecars) and MUST run
+ * outside a transaction.
+ *
+ * Exactly one backup is kept: a failed migration is retried on every request,
+ * so a fresh file per attempt would fill the volume OpenBao itself lives on.
+ * The snapshot goes to a unique temp name (SQLite refuses an existing
+ * destination, and a concurrent process may be doing the same) and is renamed
+ * over the backup only if it still predates the migration.
+ */
+function backupBeforeMigration(d: DatabaseSync, path: string, to: number): string {
+  const dest = `${path}.pre-v${to}.bak`;
+  const tmp = `${dest}.${process.pid}.${Date.now()}.tmp`;
+  // Bound parameter, not interpolation: a double-quoted path parses as an
+  // identifier ("no such column: /bao/file/ui.db").
+  d.prepare("VACUUM INTO ?").run(tmp);
+  // Another process may have committed the migration between our version check
+  // and the snapshot; that snapshot must not replace the real pre-migration one.
+  const snap = new DatabaseSync(tmp, { readOnly: true });
+  const stillOld = userVersion(snap) < to;
+  snap.close();
+  if (stillOld) renameSync(tmp, dest);
+  else rmSync(tmp, { force: true });
+  return dest;
+}
+
+/** v1 -> v2: the 'application' label scope was renamed to 'project'. */
+function renameApplicationScope(d: DatabaseSync) {
+  // Plain UPDATE, never OR REPLACE: a (namespace, 'project', ref) row cannot
+  // exist in a v1 store, and if one somehow does we want the PK conflict to
+  // abort the migration rather than silently drop somebody's label.
+  d.exec("UPDATE labels SET scope = 'project' WHERE scope = 'application'");
+}
+
+const OLD_CRED_PREFIX = "app-credentials::";
+const NEW_CRED_PREFIX = "project-credentials::";
+
+/**
+ * Rename `app` to `project` on every credential in one stored array. Throws
+ * rather than salvaging: these rows are the only record of which AppRoles the UI
+ * issued, so a half-migrated row would orphan live credentials in OpenBao with
+ * nothing left pointing at them.
+ */
+function renameAppField(key: string, json: string): string {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(json);
+  } catch (err) {
+    throw new Error(
+      `config row "${key}" holds unparseable JSON (${String(err)}); refusing to migrate it`,
+    );
+  }
+  if (!Array.isArray(parsed)) {
+    throw new Error(
+      `config row "${key}" is not an array of credentials; refusing to migrate it`,
+    );
+  }
+  return JSON.stringify(
+    parsed.map((entry) => {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) return entry;
+      const cred = { ...(entry as Record<string, unknown>) };
+      if ("app" in cred) {
+        cred.project = cred.app;
+        delete cred.app;
+      }
+      return cred;
+    }),
+  );
+}
+
+/**
+ * v1 -> v2: `app-credentials::<ns>` becomes `project-credentials::<ns>`. The
+ * namespace suffix is arbitrary, so rows are found with LIKE — '%' also covers
+ * the empty suffix the root namespace uses ("app-credentials::").
+ */
+function renameCredentialKeys(d: DatabaseSync) {
+  const rows = d
+    .prepare("SELECT key, json FROM config WHERE key LIKE ? ORDER BY key")
+    .all(`${OLD_CRED_PREFIX}%`) as { key: string; json: string }[];
+
+  // Updating the TEXT PRIMARY KEY in place keeps updated_at, which records when
+  // an operator last saved these credentials — not when we rewrote a field name.
+  const update = d.prepare("UPDATE config SET key = ?, json = ? WHERE key = ?");
+  for (const row of rows) {
+    // Slice the prefix; do NOT use SQL replace() on the whole key — a namespace
+    // that itself contained the prefix would get rewritten twice.
+    const next = NEW_CRED_PREFIX + row.key.slice(OLD_CRED_PREFIX.length);
+    update.run(next, renameAppField(row.key, row.json), row.key);
+  }
+  // access-roles::<ns>, role-templates::<ns>, onboarding::<ns> and ui are
+  // deliberately untouched: their objects key on `name` / have no `app` field.
+}
+
+/**
+ * Bring the store up to SCHEMA_VERSION. Called once per connection from db().
+ *
+ * The version lives in PRAGMA user_version — a header field, so there is no meta
+ * table to bootstrap, and it rolls back with the surrounding transaction. v1 is
+ * implicit: the default 0 *with the tables already present*. A brand-new file is
+ * 0 with no tables and goes straight to SCHEMA_VERSION with no rename pass and
+ * no .bak left behind.
+ *
+ * Nothing in here may call db(), getConfig() or setConfig(): _db is not assigned
+ * until migrate() returns, so a helper call would open a SECOND connection that
+ * blocks on our own write lock.
+ */
+function migrate(d: DatabaseSync, path: string) {
+  if (userVersion(d) >= SCHEMA_VERSION) return;
+
+  const fresh = isFreshDatabase(d);
+
+  // VACUUM INTO cannot run inside a transaction, so the snapshot is taken before
+  // BEGIN. Nothing destructive has happened yet, so a crash in the gap only
+  // leaves a backup the next attempt supersedes. Skipped for :memory: (no file)
+  // and for fresh stores (nothing to lose, and a .bak per clean install is noise).
+  const backup =
+    fresh || path === ":memory:" ? null : backupBeforeMigration(d, path, SCHEMA_VERSION);
+
+  // BEGIN IMMEDIATE, not a bare BEGIN: a deferred transaction takes a read lock
+  // first, and the read->write upgrade can return SQLITE_BUSY *immediately*
+  // without honoring busy_timeout. IMMEDIATE takes the write lock up front,
+  // which is what busy_timeout actually waits on when a second process on the
+  // same volume is migrating.
+  d.exec("BEGIN IMMEDIATE");
+  try {
+    // Re-read under the write lock: another process may have finished while we
+    // were queued behind it.
+    if (userVersion(d) >= SCHEMA_VERSION) {
+      d.exec("COMMIT");
+      return;
+    }
+    ensureSchema(d);
+    if (!fresh) {
+      renameApplicationScope(d);
+      renameCredentialKeys(d);
+    }
+    setUserVersion(d, SCHEMA_VERSION);
+    d.exec("COMMIT");
+  } catch (err) {
+    // A statement-level failure leaves the transaction open and rollbackable. An
+    // I/O-level failure may have already unwound it, in which case ROLLBACK
+    // itself throws "no transaction is active" — swallow that so the real cause
+    // survives.
+    try {
+      d.exec("ROLLBACK");
+    } catch {
+      // already unwound by SQLite
+    }
+    throw new Error(
+      `ui.db migration to v${SCHEMA_VERSION} failed and was rolled back${
+        backup ? ` (pre-migration backup: ${backup})` : ""
+      }: ${err instanceof Error ? err.message : String(err)}`,
+      { cause: err },
+    );
+  }
 }
 
 /** Test-only: close and forget the connection so a fresh UI_DB_PATH is picked up. */
