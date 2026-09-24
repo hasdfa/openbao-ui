@@ -232,6 +232,22 @@ describe("schema migration v1 -> v2", () => {
     });
   });
 
+  it("keeps a single backup however many times a failing migration is retried", () => {
+    const file = freshDir();
+    seedV1(file, {
+      labels: [["", "application", "backend", "B", null, null, null, 5]],
+      config: [["app-credentials::x", "{not json"]],
+    });
+
+    for (let i = 0; i < 3; i++) {
+      expect(() => listLabels("")).toThrow(/refusing to migrate/);
+      __closeDb();
+    }
+
+    expect(readdirSync(dir).filter((f) => f.includes(".bak"))).toEqual(["ui.db.pre-v2.bak"]);
+    expect(raw(`${file}.pre-v2.bak`, (d) => d.prepare("SELECT scope FROM labels").get())).toMatchObject({ scope: "application" });
+  });
+
   it("passes through entries that are already v2 or are not objects", () => {
     const file = freshDir();
     seedV1(file, {

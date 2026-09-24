@@ -13,7 +13,7 @@
  * Uses Node's built-in `node:sqlite` (no native dependency, no extra image
  * layers). Available unflagged on the Node 22 the runtime image ships.
  */
-import { existsSync, mkdirSync } from "node:fs";
+import { mkdirSync, renameSync, rmSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
@@ -117,15 +117,27 @@ function isFreshDatabase(d: DatabaseSync): boolean {
 /**
  * Snapshot the store beside itself before a destructive migration. VACUUM INTO
  * writes one consistent file (WAL folded in, no -wal/-shm sidecars) and MUST run
- * outside a transaction. SQLite refuses an existing destination, so a leftover
- * backup from an earlier failed attempt is kept and this one is timestamped.
+ * outside a transaction.
+ *
+ * Exactly one backup is kept: a failed migration is retried on every request,
+ * so a fresh file per attempt would fill the volume OpenBao itself lives on.
+ * The snapshot goes to a unique temp name (SQLite refuses an existing
+ * destination, and a concurrent process may be doing the same) and is renamed
+ * over the backup only if it still predates the migration.
  */
 function backupBeforeMigration(d: DatabaseSync, path: string, to: number): string {
-  const base = `${path}.pre-v${to}.bak`;
-  const dest = existsSync(base) ? `${path}.pre-v${to}.${Date.now()}.bak` : base;
+  const dest = `${path}.pre-v${to}.bak`;
+  const tmp = `${dest}.${process.pid}.${Date.now()}.tmp`;
   // Bound parameter, not interpolation: a double-quoted path parses as an
   // identifier ("no such column: /bao/file/ui.db").
-  d.prepare("VACUUM INTO ?").run(dest);
+  d.prepare("VACUUM INTO ?").run(tmp);
+  // Another process may have committed the migration between our version check
+  // and the snapshot; that snapshot must not replace the real pre-migration one.
+  const snap = new DatabaseSync(tmp, { readOnly: true });
+  const stillOld = userVersion(snap) < to;
+  snap.close();
+  if (stillOld) renameSync(tmp, dest);
+  else rmSync(tmp, { force: true });
   return dest;
 }
 
