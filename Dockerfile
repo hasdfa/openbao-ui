@@ -15,7 +15,7 @@
 #   docker build --build-arg OPENBAO_VERSION=2.6.2 .
 # Or override the whole ref to pin a digest:
 #   docker build --build-arg OPENBAO_IMAGE=quay.io/openbao/openbao@sha256:… .
-ARG OPENBAO_VERSION=2.6.2
+ARG OPENBAO_VERSION=2.7.0
 ARG OPENBAO_IMAGE=quay.io/openbao/openbao:${OPENBAO_VERSION}
 FROM ${OPENBAO_IMAGE} AS openbao
 
