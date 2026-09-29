@@ -8,9 +8,13 @@
 # exact OpenBao version (tag parity). CI/publish pass OPENBAO_VERSION explicitly
 # (from the repo's `.openbao-version` pin); this default is the local fallback.
 # Override OPENBAO_IMAGE to pin a digest instead.
-ARG OPENBAO_VERSION=2.6.2
+ARG OPENBAO_VERSION=2.7.0
 ARG OPENBAO_IMAGE=quay.io/openbao/openbao:${OPENBAO_VERSION}
+# The last OpenBao that can read `file` storage. Only the entrypoint's one-time
+# migration of volumes from older images runs it; drop once those are migrated.
+ARG LEGACY_OPENBAO_VERSION=2.6.3
 FROM ${OPENBAO_IMAGE} AS openbao
+FROM quay.io/openbao/openbao:${LEGACY_OPENBAO_VERSION} AS openbao-legacy
 
 FROM node:22-alpine AS runner
 WORKDIR /app
@@ -21,6 +25,7 @@ ENV NODE_ENV=production \
     HOSTNAME=0.0.0.0
 
 COPY --from=openbao /usr/bin/bao /usr/local/bin/bao
+COPY --from=openbao-legacy /usr/bin/bao /usr/local/bin/bao-legacy
 COPY app/ ./
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY openbao.hcl /bao/config/openbao.hcl

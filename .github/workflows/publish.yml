@@ -77,8 +77,13 @@ jobs:
           img="${REGISTRY}/${IMAGE_NAME}"
           # tag parity with OpenBao: full, major.minor, major
           tags="${img}:${version},${img}:${major}.${minor},${img}:${major}"
-          # immutable provenance tag
-          tags="${tags},${img}:sha-$(echo "${GITHUB_SHA}" | cut -c1-12)"
+          # Immutable provenance tag: only for a build of the commit's own pin. A
+          # sync build (openbao_version input) of the same commit must not
+          # re-point it at a different OpenBao; that silently swapped a
+          # deployed tag for an incompatible build once.
+          if [ -z "$TARGET_OPENBAO_VERSION" ] || [ "$TARGET_OPENBAO_VERSION" = "$(tr -d '[:space:]' < .openbao-version)" ]; then
+            tags="${tags},${img}:sha-$(echo "${GITHUB_SHA}" | cut -c1-12)"
+          fi
           # latest: on a push to the default branch, or when a caller asks for it
           latest="false"
           if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/${{ github.event.repository.default_branch }}" ]; then
@@ -154,6 +159,11 @@ jobs:
           E2E_BASE_URL: http://localhost:3000
           E2E_TOKEN: root
         run: pnpm e2e
+
+      - name: Test storage migration from `file`
+        env:
+          CANDIDATE_IMAGE: ${{ steps.candidate.outputs.imageid }}
+        run: docker/test-storage-migration.sh "$CANDIDATE_IMAGE"
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3

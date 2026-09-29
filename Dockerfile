@@ -17,7 +17,11 @@
 #   docker build --build-arg OPENBAO_IMAGE=quay.io/openbao/openbao@sha256:… .
 ARG OPENBAO_VERSION=2.7.0
 ARG OPENBAO_IMAGE=quay.io/openbao/openbao:${OPENBAO_VERSION}
+# The last OpenBao that can read `file` storage. Only the entrypoint's one-time
+# migration of volumes from older images runs it; drop once those are migrated.
+ARG LEGACY_OPENBAO_VERSION=2.6.3
 FROM ${OPENBAO_IMAGE} AS openbao
+FROM quay.io/openbao/openbao:${LEGACY_OPENBAO_VERSION} AS openbao-legacy
 
 # --- Stage 1: install dependencies ------------------------------------------
 FROM node:22-alpine AS deps
@@ -53,6 +57,7 @@ ENV HOSTNAME=0.0.0.0
 
 # Pull the `bao` binary from the OpenBao image stage (see OPENBAO_IMAGE above).
 COPY --from=openbao /usr/bin/bao /usr/local/bin/bao
+COPY --from=openbao-legacy /usr/bin/bao /usr/local/bin/bao-legacy
 
 # Next.js standalone server + static assets.
 COPY --from=builder /app/.next/standalone ./

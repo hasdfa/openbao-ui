@@ -73,6 +73,10 @@ jobs:
           E2E_TOKEN: root
         run: pnpm e2e
 
+      # Volumes from pre-raft images must come up on this one with their data.
+      - name: Storage migration from `file`
+        run: docker/test-storage-migration.sh openbao-ui:ci
+
       - name: Container logs on failure
         if: failure()
         run: docker logs openbao-ui || true

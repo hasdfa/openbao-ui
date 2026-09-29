@@ -95,10 +95,28 @@ Then visit <http://localhost:3000> and log in with token `root`.
 
 - **Dev mode** (`BAO_DEV=1`, default): in-memory, auto-unsealed, fixed root
   token — great for trying it out, **not** for production.
-- **Non-dev** (`BAO_DEV=0`): boots from `docker/openbao.hcl` (file storage). The
-  instance starts **sealed/uninitialized** — the UI detects this at `/ui2/login`
-  and walks you through the built-in **initialize → save keys → unseal** flow.
-  Mount a volume at `/bao/file` to persist storage.
+- **Non-dev** (`BAO_DEV=0`): boots from `docker/openbao.hcl` (single-node raft
+  storage). The instance starts **sealed/uninitialized** — the UI detects this
+  at `/ui2/login` and walks you through the built-in **initialize → save keys →
+  unseal** flow. Mount a volume at `/bao/file` to persist storage.
+
+#### Upgrading a volume from `file` storage
+
+Images before OpenBao 2.7 used the `file` storage backend, which 2.7 removed.
+On first boot this image migrates such a volume to raft by itself (using a
+bundled OpenBao 2.6.3 that can still read `file`), then starts normally:
+
+- Unseal with the **same keys** as before; the root token and all data carry over.
+- The old data is moved to `/bao/file/legacy-file/` and kept as a rollback
+  copy. To roll back to an older image, move its contents back to `/bao/file/`
+  first; otherwise the older image sees an empty, uninitialized vault.
+- Volumes with **child namespaces** are refused and left untouched: OpenBao
+  can't yet migrate those correctly and they fail from the second boot
+  ([openbao/openbao#3921](https://github.com/openbao/openbao/issues/3921)).
+  Keep them on an image with OpenBao 2.6.x for now.
+
+`docker/test-storage-migration.sh <image>` replays this upgrade; CI runs it on
+every build.
 
 ### Behind a reverse proxy
 
