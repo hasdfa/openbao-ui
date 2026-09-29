@@ -18,6 +18,7 @@ import { RowChevron, type EnvOption } from "@/components/kv/kv-scope";
 import { Button } from "@/components/ui/button";
 import { type KvRowMeta } from "@/lib/kv";
 import { cn } from "@/lib/utils";
+import { secretsHref } from "@/lib/secrets-href";
 
 export type Sort = "name" | "updated";
 
@@ -84,6 +85,7 @@ export function KvTable({
   rowMeta,
   metaAvailable,
   onDeleteRequest,
+  canDelete = true,
   onNewSecret,
   filter,
   onFilterChange,
@@ -103,7 +105,10 @@ export function KvTable({
   rowMeta: Record<string, KvRowMeta>;
   metaAvailable: boolean;
   onDeleteRequest: (paths: string[]) => void;
-  onNewSecret: () => void;
+  /** false once OpenBao says the token can't delete here; hides bulk delete. */
+  canDelete?: boolean;
+  /** Omitted when the token can't create secrets here. */
+  onNewSecret?: () => void;
   filter: string;
   onFilterChange: (v: string) => void;
   sort: Sort;
@@ -113,7 +118,6 @@ export function KvTable({
   const filterRef = React.useRef<HTMLInputElement>(null);
   const bodyRef = React.useRef<HTMLDivElement>(null);
 
-  const base = `/secrets/${mount}`;
   // A phone has no more room for the metadata columns than the split view does.
   const narrow = useNarrowViewport();
   const dense = compact || narrow;
@@ -232,7 +236,7 @@ export function KvTable({
                   filterRef.current?.focus();
                 }}
                 aria-label="Clear filter"
-                className="absolute right-1.5 top-1/2 flex size-5 -translate-y-1/2 items-center justify-center rounded text-muted-foreground transition-colors hover:text-foreground"
+                className="absolute right-1 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
               >
                 <X className="size-3.5" />
               </button>
@@ -285,14 +289,16 @@ export function KvTable({
           >
             Clear
           </Button>
-          <Button
-            size="sm"
-            variant="destructive"
-            className="ml-auto"
-            onClick={() => onDeleteRequest(active)}
-          >
-            <Trash2 /> Delete {active.length}
-          </Button>
+          {canDelete ? (
+            <Button
+              size="sm"
+              variant="destructive"
+              className="ml-auto"
+              onClick={() => onDeleteRequest(active)}
+            >
+              <Trash2 /> Delete {active.length}
+            </Button>
+          ) : null}
         </div>
       ) : null}
 
@@ -340,7 +346,7 @@ export function KvTable({
                   kind="folder"
                   name={name.replace(/\/$/, "")}
                   rawKey={name}
-                  href={`${base}/${join(folder, name)}`}
+                  href={secretsHref(mount, join(folder, name))}
                   path={join(folder, name)}
                   dense={dense}
                   showEnvs={showEnvs}
@@ -604,7 +610,7 @@ function Row({
 
       <td className={cn(cell, dense && "!pr-4 md:!pr-6")}>
         {fullPath ? (
-          <div className="relative z-10 flex justify-end transition-opacity duration-150 md:opacity-0 md:focus-within:opacity-100 md:group-hover/row:opacity-100">
+          <div className="relative z-10 flex justify-end transition-opacity duration-150 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:focus-within:opacity-100 [@media(hover:hover)]:group-hover/row:opacity-100">
             <CopyButton value={fullPath} />
           </div>
         ) : null}
@@ -710,7 +716,8 @@ function EmptyPath({
   folder: string;
   otherEnvs: EnvOption[];
   across: CrossEnv;
-  onNewSecret: () => void;
+  /** Omitted when the token can't create secrets here. */
+  onNewSecret?: () => void;
 }) {
   const elsewhere = otherEnvs
     .map((env) => ({ env, count: across[env.mount]?.keys.size ?? 0 }))
@@ -731,9 +738,11 @@ function EmptyPath({
         </span>
         . Folders appear on their own once a secret sits inside one.
       </p>
-      <Button size="sm" className="mt-4" onClick={onNewSecret}>
-        New secret here
-      </Button>
+      {onNewSecret ? (
+        <Button size="sm" className="mt-4" onClick={onNewSecret}>
+          New secret here
+        </Button>
+      ) : null}
 
       {elsewhere.length ? (
         <div className="mt-8 border-t pt-6">
@@ -744,7 +753,7 @@ function EmptyPath({
             {elsewhere.map(({ env, count }) => (
               <li key={env.mount}>
                 <Link
-                  href={`/secrets/${join(env.mount, folder)}`}
+                  href={secretsHref(env.mount, folder)}
                   className="flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors duration-150 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
                 >
                   <ColorDot color={env.color} className="size-2" />

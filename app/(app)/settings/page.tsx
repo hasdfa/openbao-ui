@@ -31,7 +31,7 @@ export default function ProfilePage() {
   const t = token.data;
 
   return (
-    <div className="mx-auto max-w-2xl p-8">
+    <div className="max-w-2xl px-4 py-6 md:px-8">
       {token.isLoading ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
       ) : !t ? (

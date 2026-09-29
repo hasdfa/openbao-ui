@@ -5,7 +5,7 @@ import * as React from "react";
 // Client-side UI preferences (no server interaction), persisted per-browser.
 export type Preferences = {
   revealSecrets: boolean; // show KV/cubbyhole values un-masked by default
-  editorMode: "kv" | "json"; // default secret editor
+  editorMode: "kv" | "dotenv" | "yaml" | "json"; // default secret editor
   toastDurationMs: number; // how long toasts stay
   auditRefreshMs: number; // audit-log auto-refresh interval
 };

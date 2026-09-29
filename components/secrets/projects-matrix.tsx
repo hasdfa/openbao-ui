@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { type ProjectInfo, type KvMount } from "@/lib/projects";
 import { cn } from "@/lib/utils";
+import { secretsHref } from "@/lib/secrets-href";
 
 const iconBtn = "size-11 shrink-0 text-muted-foreground md:size-9";
 
@@ -74,7 +75,7 @@ export function ProjectsMatrix({
             {kvMounts.map((env) => (
               <th key={env.mount} className="px-3 py-2.5 font-medium">
                 <Link
-                  href={`/secrets/${env.mount}`}
+                  href={secretsHref(env.mount)}
                   title={`Browse everything in ${envName(env.mount)}`}
                   className="inline-flex items-center gap-1.5 rounded-md px-1 py-0.5 -mx-1 transition-colors duration-150 hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
                 >
@@ -115,7 +116,7 @@ export function ProjectsMatrix({
                   <td key={env.mount} className="px-3 py-3 align-middle">
                     {present ? (
                       <Link
-                        href={`/secrets/${env.mount}/${project.project}`}
+                        href={secretsHref(env.mount, project.project)}
                         className={buttonVariants({ size: "sm", variant: "outline" })}
                       >
                         Open

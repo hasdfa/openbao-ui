@@ -47,7 +47,10 @@ export function proxy(req: NextRequest) {
 
   const token = req.cookies.get(COOKIE_NAME)?.value;
   if (!token) {
-    return NextResponse.redirect(new URL(`${BASE_PATH}/login`, req.url));
+    const login = new URL(`${BASE_PATH}/login`, req.url);
+    // bring the user back to the page they asked for once they sign in
+    login.searchParams.set("next", `${BASE_PATH}${rel === "/" ? "" : rel}${req.nextUrl.search}`);
+    return NextResponse.redirect(login);
   }
 
   return NextResponse.next();

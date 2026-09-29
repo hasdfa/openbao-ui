@@ -7,7 +7,7 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { CopyButton } from "@/components/copy-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogHeader } from "@/components/ui/dialog";
+import { Dialog, DialogCancel, DialogHeader } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { BaoError } from "@/lib/bao-client";
@@ -30,12 +30,32 @@ export default function TokensPage() {
   const [creating, setCreating] = React.useState(false);
   const [revoking, setRevoking] = React.useState<TokenInfo | null>(null);
   const revoke = useRevokeAccessor();
+  const [q, setQ] = React.useState("");
+  const needle = q.trim().toLowerCase();
+  const shown = (tokens.data?.items ?? []).filter(
+    (t) =>
+      !needle ||
+      t.display_name.toLowerCase().includes(needle) ||
+      t.accessor.toLowerCase().includes(needle) ||
+      t.policies.some((p) => p.toLowerCase().includes(needle)),
+  );
 
   return (
-    <div className="mx-auto max-w-5xl p-8">
-      <div className="mb-4 flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">
-          {tokens.data ? `${tokens.data.length} active token(s)` : " "}
+    <div className="max-w-5xl px-4 py-6 md:px-8">
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <Input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Filter by name, policy or accessor…"
+          aria-label="Filter tokens"
+          className="h-8 max-w-xs"
+        />
+        <p className="flex-1 text-sm tabular-nums text-muted-foreground">
+          {tokens.data
+            ? tokens.data.total > tokens.data.items.length
+              ? `Showing the first ${tokens.data.items.length} of ${tokens.data.total} tokens`
+              : `${tokens.data.total} active token${tokens.data.total === 1 ? "" : "s"}`
+            : " "}
         </p>
         <Button size="sm" onClick={() => setCreating(true)}>
           <Plus /> Create token
@@ -59,7 +79,7 @@ export default function TokensPage() {
               </tr>
             </thead>
             <tbody className="divide-y">
-              {(tokens.data ?? []).map((t) => (
+              {shown.map((t) => (
                 <tr key={t.accessor} className="transition-colors hover:bg-muted/40">
                   <td className="px-4 py-2.5 font-medium">
                     {t.display_name || "—"}
@@ -89,13 +109,13 @@ export default function TokensPage() {
                   </td>
                 </tr>
               ))}
-              {tokens.data?.length === 0 ? (
+              {tokens.data && shown.length === 0 ? (
                 <tr>
                   <td
                     colSpan={5}
                     className="px-4 py-10 text-center text-muted-foreground"
                   >
-                    No tokens found.
+                    {needle ? "No tokens match this filter." : "No tokens found."}
                   </td>
                 </tr>
               ) : null}
@@ -117,8 +137,11 @@ export default function TokensPage() {
         }}
         title="Revoke token?"
         description={`Revokes "${revoking?.display_name || revoking?.accessor}" and its leases immediately.`}
+        confirmText={revoking?.display_name || revoking?.accessor}
         confirmLabel="Revoke"
         pending={revoke.isPending}
+        warning="Child tokens and all leases belonging to this token or its children will also be revoked."
+        error={revoke.error ? errMsg(revoke.error) : null}
       />
     </div>
   );
@@ -249,9 +272,7 @@ function CreateTokenDialog({ onClose }: { onClose: () => void }) {
           </div>
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={onClose}>
-              Cancel
-            </Button>
+            <DialogCancel onClose={onClose} />
             <Button type="submit" disabled={create.isPending}>
               {create.isPending ? "Creating…" : "Create"}
             </Button>

@@ -107,6 +107,12 @@
 }
 
 @theme inline {
+  /* Strong curves: the stock ease-out barely decelerates, so arrivals read as
+   * sluggish. Redefining the tokens upgrades every `ease-out` utility. */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+
   /* refined elevation scale used across cards/menus/dialogs */
   --shadow-xs: 0 1px 2px 0 rgb(9 26 40 / 0.04);
   --shadow-sm: 0 1px 2px 0 rgb(9 26 40 / 0.05), 0 1px 3px 0 rgb(9 26 40 / 0.05);

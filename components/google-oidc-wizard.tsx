@@ -5,7 +5,7 @@ import { CheckCircle2, Plus, Trash2, X } from "lucide-react";
 import * as React from "react";
 
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogHeader } from "@/components/ui/dialog";
+import { Dialog, DialogCancel, DialogHeader } from "@/components/ui/dialog";
 import { Disclosure } from "@/components/ui/disclosure";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -387,9 +387,7 @@ export function GoogleOidcWizard({
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
         <div className="sticky -bottom-6 -mx-6 mt-2 flex justify-end gap-2 border-t bg-card px-6 py-4">
-          <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
-            Cancel
-          </Button>
+          <DialogCancel onClose={onClose} disabled={busy} />
           <Button type="submit" disabled={busy}>
             {busy ? "Setting up…" : "Set up Google sign-in"}
           </Button>

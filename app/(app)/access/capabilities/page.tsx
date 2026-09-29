@@ -22,7 +22,7 @@ export default function CapabilitiesPage() {
   const result = check.data?.[path.trim()];
 
   return (
-    <div className="mx-auto max-w-2xl p-8">
+    <div className="max-w-2xl px-4 py-6 md:px-8">
       <Card>
         <CardHeader>
           <CardTitle>Capabilities tester</CardTitle>

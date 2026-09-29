@@ -4,9 +4,10 @@ import { Plus, ShieldCheck, Trash2 } from "lucide-react";
 import * as React from "react";
 
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { QueryError } from "@/components/query-error";
 import { CopyButton } from "@/components/copy-button";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogHeader } from "@/components/ui/dialog";
+import { Dialog, DialogHeader, DialogCancel } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { BaoError } from "@/lib/bao-client";
@@ -25,7 +26,7 @@ const errMsg = (e: unknown) =>
 
 export default function MfaPage() {
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-8 p-8">
+    <div className="flex max-w-3xl flex-col gap-8 px-4 py-6 md:px-8">
       <TotpMethods />
       <Enforcements />
     </div>
@@ -50,6 +51,7 @@ function TotpMethods() {
   const [period, setPeriod] = React.useState("30");
   const [error, setError] = React.useState<string | null>(null);
   const [created, setCreated] = React.useState<string | null>(null);
+  const [removing, setRemoving] = React.useState<{ id: string; name: string } | null>(null);
 
   return (
     <section>
@@ -73,12 +75,12 @@ function TotpMethods() {
               {mth.id}
             </span>
             <CopyButton value={mth.id} />
-            <Button variant="ghost" size="icon" title="Delete" onClick={() => del.mutate(mth.id)}>
+            <Button variant="ghost" size="icon" title="Delete" onClick={() => setRemoving({ id: mth.id, name: mth.issuer || "TOTP" })}>
               <Trash2 />
             </Button>
           </li>
         ))}
-        {methods.data?.length === 0 ? (
+        {methods.isError ? <li className="p-3"><QueryError error={methods.error} what="TOTP methods" /></li> : methods.data?.length === 0 ? (
           <li className="px-3 py-6 text-center text-sm text-muted-foreground">No TOTP methods yet.</li>
         ) : null}
       </ul>
@@ -118,13 +120,27 @@ function TotpMethods() {
               <Field label="Period (seconds)"><Input value={period} onChange={(e) => setPeriod(e.target.value)} /></Field>
               {error ? <p className="text-sm text-destructive">{error}</p> : null}
               <div className="flex justify-end gap-2">
-                <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+                <DialogCancel onClose={() => setOpen(false)} />
                 <Button type="submit" disabled={create.isPending}>Create</Button>
               </div>
             </form>
           )}
         </Dialog>
       ) : null}
+
+      <ConfirmDialog
+        open={!!removing}
+        onClose={() => setRemoving(null)}
+        onConfirm={async () => {
+          await del.mutateAsync(removing!.id);
+          setRemoving(null);
+        }}
+        title={`Delete TOTP method "${removing?.name}"?`}
+        description="Login enforcements using this method may stop working."
+        confirmLabel="Delete"
+        pending={del.isPending}
+        error={del.error ? errMsg(del.error) : null}
+      />
     </section>
   );
 }
@@ -163,7 +179,7 @@ function Enforcements() {
             </Button>
           </li>
         ))}
-        {list.data?.length === 0 ? (
+        {list.isError ? <li className="p-3"><QueryError error={list.error} what="login enforcements" /></li> : list.data?.length === 0 ? (
           <li className="px-3 py-6 text-center text-sm text-muted-foreground">No enforcements yet.</li>
         ) : null}
       </ul>
@@ -178,11 +194,12 @@ function Enforcements() {
               setError(null);
               if (!name.trim()) return setError("Name is required");
               if (!methodId) return setError("Select an MFA method");
+              if (!accessor) return setError("Select an auth mount");
               try {
                 await create.mutateAsync({
                   name: name.trim(),
                   mfa_method_ids: [methodId],
-                  auth_method_accessors: accessor ? [accessor] : [],
+                  auth_method_accessors: [accessor],
                 });
                 setOpen(false);
               } catch (err) {
@@ -201,7 +218,7 @@ function Enforcements() {
             </Field>
             <Field label="Apply to auth mount (accessor)">
               <select value={accessor} onChange={(e) => setAccessor(e.target.value)} className="h-9 rounded-md border bg-transparent px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                <option value="">— any —</option>
+                <option value="">— select —</option>
                 {(auth.data ?? []).filter((a) => a.path !== "token/").map((a) => (
                   <option key={a.path} value={a.accessor}>{a.path} ({a.type})</option>
                 ))}
@@ -209,8 +226,8 @@ function Enforcements() {
             </Field>
             {error ? <p className="text-sm text-destructive">{error}</p> : null}
             <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-              <Button type="submit" disabled={create.isPending}>Create</Button>
+              <DialogCancel onClose={() => setOpen(false)} />
+              <Button type="submit" disabled={create.isPending || !accessor}>Create</Button>
             </div>
           </form>
         </Dialog>
@@ -224,8 +241,10 @@ function Enforcements() {
           setRemoving(null);
         }}
         title={`Delete enforcement "${removing}"?`}
+        confirmText={removing ?? undefined}
         confirmLabel="Delete"
         pending={del.isPending}
+        error={del.error ? errMsg(del.error) : null}
       />
     </section>
   );

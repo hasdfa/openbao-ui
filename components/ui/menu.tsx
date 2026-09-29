@@ -25,14 +25,22 @@ export function Menu({
   align?: "start" | "end";
 }) {
   const [open, setOpen] = React.useState(false);
+  // stays true for the ~100ms exit so the panel fades instead of vanishing
+  const [leaving, setLeaving] = React.useState(false);
   const [rect, setRect] = React.useState<DOMRect | null>(null);
   const triggerRef = React.useRef<HTMLButtonElement>(null);
   const panelRef = React.useRef<HTMLDivElement>(null);
 
-  const close = React.useCallback(() => {
+  // only ever called while open (listeners and items exist only then)
+  const dismiss = React.useCallback(() => {
     setOpen(false);
-    triggerRef.current?.focus();
+    setLeaving(true);
   }, []);
+
+  const close = React.useCallback(() => {
+    dismiss();
+    triggerRef.current?.focus();
+  }, [dismiss]);
 
   const place = React.useCallback(() => {
     const el = triggerRef.current;
@@ -56,7 +64,7 @@ export function Menu({
     const onDown = (e: MouseEvent) => {
       const t = e.target as Node;
       if (panelRef.current?.contains(t) || triggerRef.current?.contains(t)) return;
-      setOpen(false);
+      dismiss();
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -70,7 +78,7 @@ export function Menu({
       document.removeEventListener("mousedown", onDown);
       document.removeEventListener("keydown", onKey, true);
     };
-  }, [open, close]);
+  }, [open, close, dismiss]);
 
   // move focus into the panel on open, starting at the current value
   React.useEffect(() => {
@@ -113,10 +121,15 @@ export function Menu({
         aria-label={label}
         aria-haspopup="menu"
         aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => {
+          if (open) return dismiss();
+          setLeaving(false);
+          setOpen(true);
+        }}
         onKeyDown={(e) => {
           if (e.key === "ArrowDown" && !open) {
             e.preventDefault();
+            setLeaving(false);
             setOpen(true);
           }
         }}
@@ -129,14 +142,22 @@ export function Menu({
         {trigger}
       </button>
 
-      {open && rect ? (
+      {(open || leaving) && rect ? (
         <div
           ref={panelRef}
           role="menu"
           aria-label={label}
           onKeyDown={onPanelKeyDown}
+          onAnimationEnd={(e) => {
+            if (!open && e.target === e.currentTarget) setLeaving(false);
+          }}
+          data-state={open ? "open" : "closed"}
           style={{ top, left, width }}
-          className="fixed z-50 max-h-[min(24rem,60vh)] overflow-auto rounded-xl border bg-popover p-1 shadow-lg duration-150 animate-in fade-in-0 zoom-in-95"
+          className={cn(
+            // Grows out of the trigger's corner, so the panel reads as belonging to it.
+            "fixed z-50 max-h-[min(24rem,60vh)] overflow-auto rounded-xl border bg-popover p-1 shadow-lg duration-150 ease-out animate-in fade-in-0 zoom-in-95 data-[state=closed]:pointer-events-none data-[state=closed]:duration-100 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
+            align === "end" ? "origin-top-right" : "origin-top-left",
+          )}
         >
           {children(close)}
         </div>

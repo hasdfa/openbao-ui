@@ -4,13 +4,14 @@ import { Box, ChevronRight, FileKey, Folder, Pencil, Plus } from "lucide-react";
 import * as React from "react";
 
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { QueryError } from "@/components/query-error";
 import {
   EditorHandle,
   KvKeyValueEditor,
   KvValueViewer,
 } from "@/components/kv/kv-fields";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogHeader } from "@/components/ui/dialog";
+import { Dialog, DialogHeader, DialogCancel } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { BaoError } from "@/lib/bao-client";
@@ -139,6 +140,7 @@ function CurrentList({
   const ss = secrets ?? keys.filter((k) => !k.endsWith("/"));
 
   if (live.isLoading) return <p className="p-4 text-sm text-muted-foreground">Loading…</p>;
+  if (live.isError) return <QueryError error={live.error} what="cubbyhole contents" className="m-3" />;
   if (fs.length === 0 && ss.length === 0)
     return <p className="p-4 text-sm text-muted-foreground">Nothing stored here.</p>;
 
@@ -208,7 +210,7 @@ function SecretDetail({ path, onDeleted }: { path: string; onDeleted: () => void
         <div className="truncate font-mono font-medium">{path}</div>
         <div className="flex gap-2">
           {!editing ? (
-            <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
+            <Button size="sm" variant="outline" disabled={secret.isError} onClick={() => setEditing(true)}>
               <Pencil /> Edit
             </Button>
           ) : null}
@@ -222,6 +224,8 @@ function SecretDetail({ path, onDeleted }: { path: string; onDeleted: () => void
           {error ? <p className="mb-3 text-sm text-destructive">{error}</p> : null}
           {secret.isLoading ? (
             <p className="text-sm text-muted-foreground">Loading…</p>
+          ) : secret.isError ? (
+            <QueryError error={secret.error} what="this cubbyhole secret" />
           ) : editing ? (
             <>
               <KvKeyValueEditor ref={editorRef} initial={secret.data ?? {}} />
@@ -305,7 +309,7 @@ function CreateDialog({
         </div>
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
         <div className="flex justify-end gap-2">
-          <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+          <DialogCancel onClose={onClose} />
           <Button type="submit" disabled={write.isPending}>Create secret</Button>
         </div>
       </form>

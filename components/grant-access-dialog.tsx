@@ -5,7 +5,7 @@ import * as React from "react";
 import { EnvScopePicker, Segmented } from "@/components/env-selector";
 import { PathPicker } from "@/components/path-picker";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogHeader } from "@/components/ui/dialog";
+import { Dialog, DialogHeader, DialogCancel } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { type AccessLevel } from "@/lib/access-policy";
@@ -20,13 +20,11 @@ import {
 const LEVELS: AccessLevel[] = ["viewer", "editor", "admin"];
 
 export function GrantAccessDialog({
-  existing,
   initial,
   initialProject,
   initialPaths,
   onClose,
 }: {
-  existing: AccessRole[];
   initial?: AccessRole;
   initialProject?: string;
   initialPaths?: string[];
@@ -74,7 +72,7 @@ export function GrantAccessDialog({
       return;
     }
     try {
-      await apply.mutateAsync({ role, existing });
+      await apply.mutateAsync({ role });
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to apply");
@@ -116,7 +114,7 @@ export function GrantAccessDialog({
 
         {error || previewError ? <p className="text-sm text-destructive">{error || previewError}</p> : null}
         <div className="flex justify-end gap-2 border-t pt-4">
-          <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+          <DialogCancel onClose={onClose} />
           <Button type="submit" disabled={apply.isPending || !!previewError}>
             {apply.isPending ? "Applying…" : initial ? "Save & re-sync" : "Grant access"}
           </Button>

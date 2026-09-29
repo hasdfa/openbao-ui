@@ -33,11 +33,12 @@ export default function StatusPage() {
   const rotate = useRotateKey();
   const seal = useSeal();
   const [confirmSeal, setConfirmSeal] = React.useState(false);
+  const [confirmRotate, setConfirmRotate] = React.useState(false);
 
   const sealed = health.data?.sealed;
 
   return (
-    <div className="mx-auto max-w-5xl p-8">
+    <div className="max-w-5xl px-4 py-6 md:px-8">
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <Stat
           label="Seal status"
@@ -100,7 +101,7 @@ export default function StatusPage() {
           Operator actions on the running instance.
         </p>
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" size="sm" onClick={() => rotate.mutate()} disabled={rotate.isPending}>
+          <Button variant="outline" size="sm" onClick={() => setConfirmRotate(true)} disabled={rotate.isPending}>
             <RotateCcw /> Rotate encryption key
           </Button>
           <Button variant="destructive" size="sm" onClick={() => setConfirmSeal(true)}>
@@ -108,6 +109,18 @@ export default function StatusPage() {
           </Button>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={confirmRotate}
+        onClose={() => setConfirmRotate(false)}
+        onConfirm={async () => { await rotate.mutateAsync(); setConfirmRotate(false); }}
+        title="Rotate encryption key?"
+        description="This changes the active encryption key and cannot be undone."
+        destructive={false}
+        confirmLabel="Rotate key"
+        pending={rotate.isPending}
+        error={rotate.error instanceof Error ? rotate.error.message : null}
+      />
 
       <ConfirmDialog
         open={confirmSeal}

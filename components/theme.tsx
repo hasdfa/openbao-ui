@@ -4,6 +4,7 @@ import { Moon, Sun } from "lucide-react";
 import * as React from "react";
 
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 export type ThemePref = "light" | "dark" | "system";
 
@@ -76,16 +77,25 @@ export function useTheme() {
   return ctx;
 }
 
+const ICON = "transition-[opacity,transform] duration-300 ease-out";
+
 export function ThemeToggle() {
   const { resolved, toggle } = useTheme();
+  const dark = resolved === "dark";
+  const label = dark ? "Switch to light" : "Switch to dark";
   return (
     <Button
       variant="ghost"
       size="icon"
       onClick={toggle}
-      title={resolved === "dark" ? "Switch to light" : "Switch to dark"}
+      title={label}
+      aria-label={label}
     >
-      {resolved === "dark" ? <Sun /> : <Moon />}
+      {/* The outgoing icon turns away as the new one turns in. */}
+      <span className="relative inline-flex">
+        <Sun className={cn(ICON, dark ? "rotate-0" : "-rotate-90 scale-50 opacity-0")} />
+        <Moon className={cn(ICON, "absolute inset-0", dark ? "rotate-90 scale-50 opacity-0" : "rotate-0")} />
+      </span>
     </Button>
   );
 }

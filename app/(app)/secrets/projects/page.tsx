@@ -15,10 +15,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAccessRoles } from "@/lib/access-roles";
-import { useProjectCredentials } from "@/lib/project-credentials";
+import { credWarning, useProjectCredentials } from "@/lib/project-credentials";
 import { useProjects, useDeleteProject, type ProjectInfo } from "@/lib/projects";
 import { labelKey, useLabels } from "@/lib/labels";
 import { cn } from "@/lib/utils";
+import { secretsHref } from "@/lib/secrets-href";
 
 export default function ProjectsPage() {
   const { projects, isLoading, kvMounts } = useProjects();
@@ -148,7 +149,7 @@ export default function ProjectsPage() {
                 </Button>
                 {a.envs[0] ? (
                   <Link
-                    href={`/secrets/${a.envs[0]}/${a.project}`}
+                    href={secretsHref(a.envs[0], a.project)}
                     className={cn(buttonVariants({ size: "sm", variant: "ghost" }), "ml-auto")}
                   >
                     Open
@@ -162,10 +163,10 @@ export default function ProjectsPage() {
 
       {creating ? <NewProjectDialog onClose={() => setCreating(false)} /> : null}
       {issuing ? (
-        <IssueCredentialDialog existing={projectCreds.data ?? []} initialProject={issuing} onClose={() => setIssuing(null)} />
+        <IssueCredentialDialog initialProject={issuing} onClose={() => setIssuing(null)} />
       ) : null}
       {granting ? (
-        <GrantAccessDialog existing={accessRoles.data ?? []} initialProject={granting} onClose={() => setGranting(null)} />
+        <GrantAccessDialog initialProject={granting} onClose={() => setGranting(null)} />
       ) : null}
       {editing ? (
         <LabelEditor
@@ -198,6 +199,7 @@ export default function ProjectsPage() {
           deleting?.envs.length ? deleting.envs.map(envName).join(", ") : "no environments"
         }, then unregisters the project.`}
         confirmText={deleting?.project}
+        warning={credWarning(projectCreds.data, deleting?.project)}
         confirmLabel="Delete project"
         pending={remove.isPending}
         error={deleteError}

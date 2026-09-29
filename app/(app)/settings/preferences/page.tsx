@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { usePreferences } from "@/lib/preferences";
 import { cn } from "@/lib/utils";
+import { EDITOR_MODES } from "@/components/kv/kv-fields";
 
 const THEME_OPTIONS: { value: ThemePref; label: string; icon: React.ElementType }[] = [
   { value: "light", label: "Light", icon: Sun },
@@ -66,7 +67,7 @@ export default function PreferencesPage() {
   }
 
   return (
-    <div className="mx-auto flex max-w-2xl flex-col gap-4 p-8">
+    <div className="flex max-w-2xl flex-col gap-4 px-4 py-6 md:px-8">
       <Section title="Theme">
         <p className="-mt-2 text-sm text-muted-foreground">
           &quot;System&quot; follows your OS setting.
@@ -103,16 +104,18 @@ export default function PreferencesPage() {
             </span>
           </span>
           <div className="flex gap-1 rounded-md border p-0.5">
-            {(["kv", "json"] as const).map((m) => (
+            {EDITOR_MODES.map((m) => (
               <button
-                key={m}
-                onClick={() => setPref("editorMode", m)}
+                key={m.value}
+                type="button"
+                aria-pressed={prefs.editorMode === m.value}
+                onClick={() => setPref("editorMode", m.value)}
                 className={cn(
                   "rounded px-3 py-1 text-sm",
-                  prefs.editorMode === m ? "bg-accent font-medium" : "text-muted-foreground",
+                  prefs.editorMode === m.value ? "bg-accent font-medium" : "text-muted-foreground",
                 )}
               >
-                {m === "kv" ? "Key/value" : "Raw JSON"}
+                {m.label}
               </button>
             ))}
           </div>

@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { baoFetch } from "@/lib/bao-client";
+import { baoFetch, BaoError } from "@/lib/bao-client";
 import { useNamespace } from "@/lib/namespace";
 
 export type MfaMethod = { id: string; type: string; issuer?: string };
@@ -21,8 +21,9 @@ export function useTotpMethods() {
         const keys = res.data?.keys ?? [];
         const info = res.data?.key_info ?? {};
         return keys.map((id) => ({ id, type: "totp", issuer: info[id]?.issuer }));
-      } catch {
-        return [];
+      } catch (err) {
+        if (err instanceof BaoError && err.status === 404) return [];
+        throw err;
       }
     },
   });
@@ -76,8 +77,9 @@ export function useLoginEnforcements() {
           list: true,
         });
         return res.data?.keys ?? [];
-      } catch {
-        return [];
+      } catch (err) {
+        if (err instanceof BaoError && err.status === 404) return [];
+        throw err;
       }
     },
   });

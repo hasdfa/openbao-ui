@@ -65,6 +65,15 @@ const nextConfig: NextConfig = {
         basePath: false,
         permanent: false,
       },
+      {
+        // skipTrailingSlashRedirect (above) also skips `/ui2/` -> `/ui2`, and
+        // Next answers the slashed app root with an empty 200. Deeper paths
+        // still route with a trailing slash, so only the root needs this.
+        source: `${BASE_PATH}/`,
+        destination: BASE_PATH,
+        basePath: false,
+        permanent: false,
+      },
     ];
   },
   async headers() {

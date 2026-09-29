@@ -5,7 +5,7 @@ import { ArrowRight, CheckCircle2, Circle, Rocket, X } from "lucide-react";
 import Link from "next/link";
 import * as React from "react";
 
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { useCan } from "@/lib/acl";
 import { useAuthMethods } from "@/lib/auth-methods";
 import { baoFetch } from "@/lib/bao-client";
@@ -161,10 +161,12 @@ export function GettingStarted() {
               <div className="truncate text-xs text-muted-foreground">{s.description}</div>
             </div>
             {!s.done ? (
-              <Link href={s.href} onClick={s.onAction}>
-                <Button size="sm" variant="outline">
-                  {s.action} <ArrowRight />
-                </Button>
+              <Link
+                href={s.href}
+                onClick={s.onAction}
+                className={buttonVariants({ size: "sm", variant: "outline" })}
+              >
+                {s.action} <ArrowRight />
               </Link>
             ) : null}
           </li>

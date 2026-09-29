@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { baoFetch } from "@/lib/bao-client";
+import { baoFetch, BaoError } from "@/lib/bao-client";
 import { useNamespace } from "@/lib/namespace";
 
 const m = (s: string) => s.replace(/\/$/, "");
@@ -18,8 +18,9 @@ export function useSshCa(mount: string) {
           namespace,
         });
         return res.data?.public_key ?? null;
-      } catch {
-        return null; // signing key not configured yet
+      } catch (err) {
+        if (err instanceof BaoError && err.status === 404) return null; // signing key not configured yet
+        throw err;
       }
     },
   });
@@ -53,8 +54,9 @@ export function useSshRoles(mount: string) {
           list: true,
         });
         return res.data?.keys ?? [];
-      } catch {
-        return [] as string[];
+      } catch (err) {
+        if (err instanceof BaoError && err.status === 404) return [] as string[];
+        throw err;
       }
     },
   });

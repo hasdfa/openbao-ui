@@ -3,6 +3,8 @@
 import { Check, KeyRound, Pencil, Plus, RefreshCw, ShieldCheck, Trash2, User, Users, X } from "lucide-react";
 import * as React from "react";
 
+import { ConfirmDialog } from "@/components/confirm-dialog";
+import { QueryError } from "@/components/query-error";
 import { GrantAccessDialog } from "@/components/grant-access-dialog";
 import { colorDot } from "@/components/label-editor";
 import { EmptyState } from "@/components/empty-state";
@@ -10,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { DetailPane, ListDetail, ListPane } from "@/components/list-detail";
 import {
   useAccessRoles,
   useApplyAccessRole,
@@ -45,6 +48,7 @@ export default function TeamPage() {
   const [q, setQ] = React.useState("");
   const [granting, setGranting] = React.useState(false);
   const [editingRole, setEditingRole] = React.useState<AccessRole | null>(null);
+  const [removingRole, setRemovingRole] = React.useState<AccessRole | null>(null);
 
   const groups = groupsQ.data ?? [];
   const groupNames = new Set(groups.map((g) => g.name));
@@ -57,13 +61,14 @@ export default function TeamPage() {
   );
 
   return (
-    <div className="mx-auto max-w-5xl p-6">
+    <div className="max-w-5xl px-4 py-6 md:px-8">
       <p className="mb-5 text-sm text-muted-foreground">
         Members are OpenBao identity entities (created automatically when people
         sign in, e.g. via Google). A <strong>role</strong> assigned here is a
         policy + group. Google sign-in grants its role on the OIDC token — removing
         a chip here does not change that. Edit Access → Auth Methods instead.
       </p>
+      {groupsQ.isError ? <QueryError error={groupsQ.error} what="team groups" className="mb-5" /> : null}
 
       {/* Roles catalog */}
       <section className="mb-8">
@@ -105,6 +110,9 @@ export default function TeamPage() {
             })}
           </ul>
         )}
+        {apply.error ? (
+          <p role="alert" className="mt-2 text-sm text-destructive">{apply.error.message}</p>
+        ) : null}
       </section>
 
       {/* Scoped access roles — shareable env groups + project-specific groups */}
@@ -124,7 +132,16 @@ export default function TeamPage() {
             <Plus /> Grant access
           </Button>
         </div>
-        {accessRoles.data && accessRoles.data.length > 0 ? (
+        {applyScoped.error ? (
+          <p role="alert" className="mb-2 text-sm text-destructive">{applyScoped.error.message}</p>
+        ) : null}
+        {accessRoles.isError ? (
+          <p role="alert" className="rounded-md border border-destructive/40 p-4 text-sm text-destructive">
+            {accessRoles.error.message}
+          </p>
+        ) : accessRoles.isLoading ? (
+          <Skeleton className="h-16 w-full rounded-md" />
+        ) : accessRoles.data && accessRoles.data.length > 0 ? (
           <ul className="divide-y rounded-md border">
             {accessRoles.data.map((r) => (
               <li key={r.name} className="flex flex-wrap items-center gap-2 px-3 py-2 text-sm">
@@ -139,7 +156,7 @@ export default function TeamPage() {
                     title="Re-apply: rewrite the policy + group"
                     disabled={applyScoped.isPending}
                     onClick={() =>
-                      applyScoped.mutate({ role: r, existing: accessRoles.data ?? [] })
+                      applyScoped.mutate({ role: r })
                     }
                   >
                     <RefreshCw /> Sync
@@ -151,7 +168,10 @@ export default function TeamPage() {
                     variant="ghost"
                     size="icon"
                     title="Remove definition"
-                    onClick={() => delScoped.mutate({ name: r.name, existing: accessRoles.data ?? [] })}
+                    onClick={() => {
+                      delScoped.reset();
+                      setRemovingRole(r);
+                    }}
                   >
                     <Trash2 />
                   </Button>
@@ -182,8 +202,13 @@ export default function TeamPage() {
             description="People appear here after they sign in. Set up Google sign-in (Access → Auth Methods) or create an entity in Identity."
           />
         ) : (
-          <div className="flex min-h-[50vh] gap-4">
-            <div className="w-64 shrink-0 border-r pr-3">
+          <ListDetail
+            className="min-h-[50vh] md:gap-4"
+            open={!!selected}
+            onBack={() => setSelected(null)}
+            backLabel="All members"
+          >
+            <ListPane className="max-md:mb-4 md:w-64 md:pr-3">
               <Input
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
@@ -208,9 +233,9 @@ export default function TeamPage() {
                   <li className="px-2 py-4 text-sm text-muted-foreground">No matches.</li>
                 ) : null}
               </ul>
-            </div>
+            </ListPane>
 
-            <div className="min-w-0 flex-1">
+            <DetailPane>
               {selected ? (
                 <MemberDetail
                   entityId={selected}
@@ -220,14 +245,28 @@ export default function TeamPage() {
               ) : (
                 <p className="text-sm text-muted-foreground">Select a member.</p>
               )}
-            </div>
-          </div>
+            </DetailPane>
+          </ListDetail>
         )}
       </section>
 
+      <ConfirmDialog
+        open={!!removingRole}
+        onClose={() => setRemovingRole(null)}
+        title={`Remove the ${removingRole?.name ?? ""} definition?`}
+        description="The UI stops managing it. Its policy and group stay in OpenBao (members keep access) until you delete them under Access."
+        confirmLabel="Remove definition"
+        pending={delScoped.isPending}
+        error={delScoped.error?.message ?? null}
+        onConfirm={async () => {
+          if (!removingRole) return;
+          await delScoped.mutateAsync({ name: removingRole.name });
+          setRemovingRole(null);
+        }}
+      />
+
       {granting ? (
         <GrantAccessDialog
-          existing={accessRoles.data ?? []}
           initial={editingRole ?? undefined}
           onClose={() => {
             setGranting(false);
@@ -264,13 +303,10 @@ function MemberDetail({
     (g) => !roleIds.has(g.id) && !isSsoGroup(g.name, g.type),
   );
 
+  const [removing, setRemoving] = React.useState<Group | null>(null);
+
   function addRole(group: Group) {
-    const members = [...(group.member_entity_ids ?? []), entityId];
-    setMembers.mutate({ id: group.id, member_entity_ids: members });
-  }
-  function removeRole(group: Group) {
-    const members = (group.member_entity_ids ?? []).filter((id) => id !== entityId);
-    setMembers.mutate({ id: group.id, member_entity_ids: members });
+    setMembers.mutate({ id: group.id, entityId, assign: true });
   }
 
   if (!entity.data) {
@@ -323,8 +359,11 @@ function MemberDetail({
                       title="Remove role"
                       aria-label={`Remove ${label}`}
                       disabled={setMembers.isPending}
-                      onClick={() => removeRole(g)}
-                      className="text-muted-foreground hover:text-destructive"
+                      onClick={() => {
+                        setMembers.reset();
+                        setRemoving(g);
+                      }}
+                      className="-m-1 inline-flex size-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
                     >
                       <X className="size-3.5" />
                     </button>
@@ -362,7 +401,25 @@ function MemberDetail({
             ))}
           </select>
         )}
+        {setMembers.error && !removing ? (
+          <p role="alert" className="text-sm text-destructive">{setMembers.error.message}</p>
+        ) : null}
       </div>
+
+      <ConfirmDialog
+        open={!!removing}
+        onClose={() => setRemoving(null)}
+        title={`Remove ${removing ? displayTeamRole(removing.name) : ""} from ${entity.data.name}?`}
+        description="Group policies are resolved on every request, so they lose this role's access immediately."
+        confirmLabel="Remove role"
+        pending={setMembers.isPending}
+        error={setMembers.error?.message ?? null}
+        onConfirm={async () => {
+          if (!removing) return;
+          await setMembers.mutateAsync({ id: removing.id, entityId, assign: false });
+          setRemoving(null);
+        }}
+      />
     </div>
   );
 }

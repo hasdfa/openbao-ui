@@ -30,7 +30,7 @@ export default function LoginSettingsPage() {
   }, [cfg]);
 
   return (
-    <div className="mx-auto max-w-2xl p-8">
+    <div className="max-w-2xl px-4 py-6 md:px-8">
       <h2 className="text-lg font-semibold">Login page</h2>
       <p className="mb-5 text-sm text-muted-foreground">
         Brand the sign-in screen and choose the default method. The login page

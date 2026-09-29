@@ -8,6 +8,7 @@ import { ColorDot } from "@/components/label-editor";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { secretsHref } from "@/lib/secrets-href";
 
 export type EnvironmentItem = {
   path: string; // trailing slash, e.g. "secret/"
@@ -61,7 +62,7 @@ export function EnvironmentRail({
               className="flex min-w-[14rem] flex-1 items-center gap-1 rounded-lg border bg-card px-2 py-1.5 sm:max-w-sm"
             >
               <Link
-                href={`/secrets/${env.mount}`}
+                href={secretsHref(env.mount)}
                 className="min-w-0 flex-1 rounded-md px-1.5 py-1 transition-colors duration-150 hover:bg-accent"
               >
                 <div className="flex items-center gap-2">

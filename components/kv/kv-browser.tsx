@@ -3,6 +3,7 @@
 import { ChevronLeft, GitCompare, Plus } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import * as React from "react";
 
 import {
@@ -19,7 +20,7 @@ import {
 } from "@/components/kv/kv-fields";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { buttonVariants, Button } from "@/components/ui/button";
-import { Dialog, DialogHeader } from "@/components/ui/dialog";
+import { Dialog, DialogCancel, DialogHeader } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -35,6 +36,8 @@ import {
 import { labelKey, useLabels } from "@/lib/labels";
 import { useNamespace } from "@/lib/namespace";
 import { cn } from "@/lib/utils";
+import { allows, usePathCaps } from "@/lib/acl";
+import { useUnsavedGuard } from "@/lib/unsaved";
 
 const join = (...parts: string[]) =>
   parts.filter(Boolean).join("/").replace(/\/+/g, "/");
@@ -85,7 +88,21 @@ function ScopedKvBrowser({
 
   // Same query key as `probe` when this isn't a leaf, so there's no extra fetch.
   const list = useKvList(mount, folder);
-  const [selected, setSelected] = React.useState<string | null>(null);
+  // The open secret lives in the URL (?secret=), so it can be shared and Back
+  // closes it. History API, not a route change: the folder listing must not
+  // reload on every click. A path-style deep link to a leaf still auto-selects.
+  const searchParams = useSearchParams();
+  const [autoLeaf, setAutoLeaf] = React.useState<string | null>(null);
+  const selected = searchParams.get("secret") ?? autoLeaf;
+  const setSelected = React.useCallback((p: string | null) => {
+    setAutoLeaf(null);
+    const url = new URL(window.location.href);
+    if (p) url.searchParams.set("secret", p);
+    else url.searchParams.delete("secret");
+    window.history.pushState(null, "", url);
+  }, []);
+  // Switching secrets remounts the detail; an open edit must not vanish silently.
+  const guard = useUnsavedGuard();
   const [creating, setCreating] = React.useState(false);
   const [filter, setFilter] = React.useState("");
   const [sort, setSort] = React.useState<Sort>("name");
@@ -96,11 +113,19 @@ function ScopedKvBrowser({
   // really is a secret there (otherwise just show the folder — no false select).
   React.useEffect(() => {
     if (leafName && (list.data ?? []).includes(leafName)) {
-      setSelected(join(folder, leafName));
+      setAutoLeaf(join(folder, leafName));
     }
   }, [leafName, folder, list.data]);
 
   const isV2 = useKvIsV2(mount) !== false;
+
+  // Probe a placeholder key in this folder: a policy granting `folder/*` covers it.
+  const capProbe = join(folder, "__ui_probe__");
+  const createPath = isV2 ? `${mount}/data/${capProbe}` : `${mount}/${capProbe}`;
+  const deletePath = isV2 ? `${mount}/metadata/${capProbe}` : `${mount}/${capProbe}`;
+  const folderCaps = usePathCaps([createPath, deletePath]);
+  const canCreate = !folderCaps.data || allows(folderCaps.data[createPath], ["create"]);
+  const canDelete = !folderCaps.data || allows(folderCaps.data[deletePath], ["delete"]);
   const mounts = useMounts();
   const { data: labels } = useLabels();
 
@@ -208,15 +233,19 @@ function ScopedKvBrowser({
           projects={projects}
           presence={presence}
           actions={
-            <Button size="sm" onClick={() => setCreating(true)}>
-              <Plus /> New secret
-            </Button>
+            canCreate ? (
+              <Button size="sm" onClick={() => setCreating(true)}>
+                <Plus /> New secret
+              </Button>
+            ) : null
           }
         />
       </header>
 
       <div
-        className="flex min-h-0 flex-1 flex-col md:grid md:transition-[grid-template-columns] md:duration-200 md:ease-out"
+        // Columns snap; animating their width re-wrapped the table and the
+        // detail text on every frame. The panel content slides in instead.
+        className="flex min-h-0 flex-1 flex-col md:grid"
         style={{ gridTemplateColumns: selected ? "1fr 2.2fr" : "1fr 0fr" }}
       >
         {/* list */}
@@ -256,7 +285,7 @@ function ScopedKvBrowser({
               isV2={isV2}
               compact={!!selected}
               selectedPath={selected}
-              onSelect={setSelected}
+              onSelect={(p) => guard(() => setSelected(p))}
               currentEnv={envs.find((e) => e.mount === mount)}
               otherEnvs={otherEnvs}
               across={across}
@@ -266,7 +295,8 @@ function ScopedKvBrowser({
                 setDeleteError(null);
                 setDeleting(paths);
               }}
-              onNewSecret={() => setCreating(true)}
+              onNewSecret={canCreate ? () => setCreating(true) : undefined}
+              canDelete={canDelete}
               filter={filter}
               onFilterChange={setFilter}
               sort={sort}
@@ -283,10 +313,12 @@ function ScopedKvBrowser({
           )}
         >
           {selected ? (
-            <div className="flex h-full flex-col">
+            // Mounts when the panel opens, not on every row switch (the detail
+            // below is keyed), so browsing between secrets stays instant.
+            <div className="flex h-full flex-col duration-200 ease-out animate-in fade-in-0 slide-in-from-right-2">
               <button
                 type="button"
-                onClick={() => setSelected(null)}
+                onClick={() => guard(() => setSelected(null))}
                 className="flex items-center gap-1 border-b px-4 py-2 text-sm text-muted-foreground transition-colors hover:text-foreground md:hidden"
               >
                 <ChevronLeft className="size-4" /> All keys
@@ -401,6 +433,7 @@ function CreateSecretDialog({
   const v2 = useKvIsV2(mount);
   const [name, setName] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
+  const [changed, setChanged] = React.useState(false);
   const editorRef = React.useRef<EditorHandle>(null);
 
   const create = useMutation({
@@ -422,12 +455,16 @@ function CreateSecretDialog({
       return path;
     },
     onSuccess: onCreated,
-    onError: (e) =>
-      setError(e instanceof BaoError ? e.errors.join(", ") : "Failed to create"),
+    onError: (e) => {
+      if (e instanceof BaoError && /check-and-set/i.test(e.errors.join(" "))) {
+        return setError("A secret already exists at this path. Open it to edit instead.");
+      }
+      setError(e instanceof BaoError ? e.errors.join(", ") : e instanceof Error ? e.message : "Failed to create");
+    },
   });
 
   return (
-    <Dialog open onClose={onClose} className="max-w-xl">
+    <Dialog open onClose={onClose} className="max-w-xl" dirty={changed || !!name.trim()}>
       <DialogHeader
         title="New secret"
         description={folder ? `In folder /${folder}` : "At the mount root"}
@@ -459,14 +496,12 @@ function CreateSecretDialog({
         <div>
           <Label>Data</Label>
           <div className="mt-2">
-            <KvKeyValueEditor ref={editorRef} initial={{}} />
+            <KvKeyValueEditor ref={editorRef} initial={{}} onDirtyChange={setChanged} />
           </div>
         </div>
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
         <div className="flex justify-end gap-2">
-          <Button type="button" variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
+          <DialogCancel onClose={onClose} />
           <Button type="submit" disabled={create.isPending}>
             {create.isPending ? "Creating…" : "Create secret"}
           </Button>

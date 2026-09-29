@@ -3,7 +3,7 @@
 import { LogIn } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 
 import { Logo } from "@/components/logo";
 import { SealGate } from "@/components/seal-gate";
@@ -19,6 +19,7 @@ import { Disclosure } from "@/components/ui/disclosure";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { API_BASE, BASE_PATH } from "@/lib/base-path";
+import { safeNext } from "@/lib/login-redirect";
 
 
 const LOGIN_ENDPOINT = `${API_BASE}/auth/login`;
@@ -45,6 +46,16 @@ type UiConfig = {
   defaultLoginMethod?: string;
   oidcNeedsEmail?: boolean;
 };
+
+const noSubscribe = () => () => {};
+function readNsCookie(): string {
+  const m = document.cookie.match(/(?:^|; )bao_ns=([^;]*)/);
+  try {
+    return m ? decodeURIComponent(m[1]) : "";
+  } catch {
+    return "";
+  }
+}
 
 export default function LoginPage() {
   return (
@@ -96,6 +107,13 @@ function LoginForm() {
   const [loading, setLoading] = useState(false);
   const [pendingOidc, setPendingOidc] = useState<{ mount: string } | null>(null);
   const [workEmail, setWorkEmail] = useState("");
+  // Prefilled from the app's namespace cookie (read after hydration, so server
+  // and client agree); hidden behind a link for root users.
+  const cookieNs = useSyncExternalStore(noSubscribe, readNsCookie, () => "");
+  const [typedNs, setNamespace] = useState<string | null>(null);
+  const namespace = typedNs ?? cookieNs;
+  const [nsOpened, setShowNs] = useState(false);
+  const showNs = nsOpened || !!cookieNs;
 
   // Login customization: discovered (unauth) methods + branding/default.
   const [discovered, setDiscovered] = useState<DiscoveredMethod[]>([]);
@@ -192,7 +210,7 @@ function LoginForm() {
         return;
       }
 
-      const payload: Record<string, unknown> = { method };
+      const payload: Record<string, unknown> = { method, namespace: namespace.trim() };
       if (method === "token") payload.token = f.token;
       if (method === "userpass")
         Object.assign(payload, { username: f.username, password: f.password, mount: f.mount || undefined });
@@ -213,7 +231,7 @@ function LoginForm() {
       }
       await client.cancelQueries();
       client.clear();
-      window.location.replace(BASE_PATH);
+      window.location.replace(safeNext(search.get("next")));
     } catch {
       setError("Network error — is OpenBao reachable?");
     } finally {
@@ -292,6 +310,29 @@ function LoginForm() {
         </>
       ) : null}
 
+      {method !== "oidc" ? (
+        showNs ? (
+          <Field label="Namespace">
+            <Input
+              id="namespace"
+              placeholder="root"
+              value={namespace}
+              onChange={(e) => setNamespace(e.target.value)}
+              className="font-mono"
+              autoComplete="off"
+            />
+          </Field>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setShowNs(true)}
+            className="-mt-1 self-start text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+          >
+            Choose a namespace…
+          </button>
+        )
+      ) : null}
+
       <Button type="submit" disabled={loading}>
         {loading ? "Signing in…" : method === "oidc" ? "Continue with OIDC" : "Sign in"}
       </Button>
@@ -300,7 +341,7 @@ function LoginForm() {
 
   return (
     <main className="flex min-h-dvh items-center justify-center bg-gradient-to-b from-muted/30 to-muted/60 p-4">
-      <Card className="w-full max-w-sm overflow-hidden rounded-2xl shadow-xl duration-300 animate-in fade-in-0 zoom-in-95">
+      <Card className="w-full max-w-sm overflow-hidden rounded-2xl shadow-xl duration-200 ease-out animate-in fade-in-0">
         {branding.accent ? (
           <div className="h-1.5 w-full" style={{ backgroundColor: branding.accent }} />
         ) : null}
@@ -315,7 +356,15 @@ function LoginForm() {
           <CardDescription className="text-center">{subtitle}</CardDescription>
         </CardHeader>
         <CardContent>
-          {error ? <p className="mb-4 text-sm text-destructive">{error}</p> : null}
+          {error ? (
+            <p
+              key={error}
+              role="alert"
+              className="mb-4 text-sm text-destructive duration-200 ease-out animate-in fade-in-0 slide-in-from-top-1"
+            >
+              {error}
+            </p>
+          ) : null}
 
           {pendingOidc ? (
             <form onSubmit={submitWorkEmail} className="flex flex-col gap-4">

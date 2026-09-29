@@ -7,6 +7,9 @@ import { CopyButton } from "@/components/copy-button";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { usePreferences } from "@/lib/preferences";
+import { CodeArea } from "@/components/kv/code-area";
+import { PARSE, STRINGIFY, type SecretFormat } from "@/lib/secret-formats";
+import { cn } from "@/lib/utils";
 
 function display(value: unknown): string {
   return typeof value === "string" ? value : JSON.stringify(value);
@@ -51,6 +54,8 @@ function ViewerRow({ name, value }: { name: string; value: string }) {
         size="icon"
         onClick={() => setShown((s) => !s)}
         title={shown ? "Hide" : "Show"}
+        aria-label={shown ? `Hide ${name}` : `Show ${name}`}
+        aria-pressed={shown}
       >
         {shown ? <EyeOff /> : <Eye />}
       </Button>
@@ -59,9 +64,9 @@ function ViewerRow({ name, value }: { name: string; value: string }) {
   );
 }
 
-// --- editor: key/value rows with a raw-JSON fallback for nested data ---
+// --- editor: key/value fields, or the same data as .env, YAML or JSON text ---
 export type EditorHandle = {
-  /** Returns the edited object, or throws if raw JSON is invalid. */
+  /** Returns the edited object, or throws if the text doesn't parse. */
   getData: () => Record<string, unknown>;
 };
 
@@ -83,6 +88,10 @@ function toRows(data: Record<string, unknown>): Row[] {
 }
 
 export function rowsToData(rows: Row[]): Record<string, unknown> {
+  // A value typed into the blank row, with no key yet, used to vanish on save.
+  if (rows.some((row) => row.placeholder && row.value !== "")) {
+    throw new Error("Every value needs a key");
+  }
   const kept = rows.filter(
     (row) => !row.placeholder && !(row.key === "" && !row.keepEmptyKey),
   );
@@ -115,78 +124,112 @@ export function snapshotKvDraft(
   return { data: structuredClone(data), cas };
 }
 
+export type EditorMode = "kv" | SecretFormat;
+
+export const EDITOR_MODES: { value: EditorMode; label: string }[] = [
+  { value: "kv", label: "Fields" },
+  { value: "dotenv", label: ".env" },
+  { value: "yaml", label: "YAML" },
+  { value: "json", label: "JSON" },
+];
+
 export const KvKeyValueEditor = React.forwardRef<
   EditorHandle,
-  { initial: Record<string, unknown> }
->(function KvKeyValueEditor({ initial }, ref) {
+  {
+    initial: Record<string, unknown>;
+    /** Called when the edited data starts or stops differing from `initial`. */
+    onDirtyChange?: (dirty: boolean) => void;
+  }
+>(function KvKeyValueEditor({ initial, onDirtyChange }, ref) {
   const { prefs } = usePreferences();
-  // nested data forces raw JSON; otherwise honor the user's default editor
-  const [raw, setRaw] = React.useState(
-    () => hasNonString(initial) || prefs.editorMode === "json",
-  );
+  // Fields and .env hold only flat strings; nested data opens in the user's
+  // text format of choice, else JSON.
+  const [mode, setMode] = React.useState<EditorMode>(() => {
+    const pref = prefs.editorMode;
+    if (!hasNonString(initial)) return pref;
+    return pref === "yaml" || pref === "json" ? pref : "json";
+  });
   const [rows, setRows] = React.useState<Row[]>(() => toRows(initial));
-  const [json, setJson] = React.useState(() =>
-    JSON.stringify(initial, null, 2),
+  const [text, setText] = React.useState(() =>
+    mode === "kv" ? "" : STRINGIFY[mode](initial),
   );
   const [modeError, setModeError] = React.useState<string | null>(null);
 
-  React.useImperativeHandle(ref, () => ({
-    getData() {
-      if (raw) {
-        const parsed = JSON.parse(json);
-        if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-          throw new Error("Secret data must be a JSON object");
-        }
-        return parsed as Record<string, unknown>;
-      }
-      return rowsToData(rows);
-    },
-  }));
+  const current = (): Record<string, unknown> =>
+    mode === "kv" ? rowsToData(rows) : PARSE[mode](text);
 
-  function switchToRaw() {
+  React.useImperativeHandle(ref, () => ({ getData: current }));
+
+  // Compare data, not text: switching format alone isn't an edit. Text that
+  // doesn't parse counts as changed.
+  const [initialJson] = React.useState(() => JSON.stringify(initial));
+  React.useEffect(() => {
+    let changed = true;
     try {
-      const out = rowsToData(rows);
-      setJson(JSON.stringify(out, null, 2));
-      setModeError(null);
-      setRaw(true);
-    } catch (err) {
-      setModeError(err instanceof Error ? err.message : "Invalid fields");
+      changed = JSON.stringify(mode === "kv" ? rowsToData(rows) : PARSE[mode](text)) !== initialJson;
+    } catch {
+      /* unparseable: changed */
     }
-  }
+    onDirtyChange?.(changed);
+  }, [mode, rows, text, initialJson, onDirtyChange]);
 
-  function switchToRows() {
+  // Convert through the data, so a switch can never silently change a value;
+  // anything the target format can't hold keeps you where you are, with why.
+  function switchTo(next: EditorMode) {
+    if (next === mode) return;
     try {
-      setRows(jsonToRows(json));
+      const data = current();
+      if (next === "kv") {
+        if (hasNonString(data)) throw new Error("Nested values can't be edited as fields; use YAML or JSON");
+        setRows(toRows(data));
+      } else {
+        setText(STRINGIFY[next](data));
+      }
       setModeError(null);
-      setRaw(false);
+      setMode(next);
     } catch (e) {
-      setModeError(e instanceof Error ? e.message : "Invalid JSON");
+      setModeError(e instanceof Error ? e.message : "Can't convert this data");
     }
   }
 
   return (
     <div className="flex flex-col gap-3">
       <div className="flex justify-end">
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={raw ? switchToRows : switchToRaw}
+        <div
+          role="radiogroup"
+          aria-label="Edit as"
+          className="inline-flex rounded-md border bg-muted/40 p-0.5 text-xs"
         >
-          {raw ? "Key/value editor" : "Raw JSON"}
-        </Button>
+          {EDITOR_MODES.map((m) => (
+            <button
+              key={m.value}
+              type="button"
+              role="radio"
+              aria-checked={mode === m.value}
+              onClick={() => switchTo(m.value)}
+              className={cn(
+                "rounded px-2.5 py-1 font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
+                mode === m.value
+                  ? "bg-card text-foreground shadow-xs"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {modeError ? (
         <p role="alert" className="text-sm text-destructive">{modeError}</p>
       ) : null}
 
-      {raw ? (
-        <textarea
-          value={json}
-          onChange={(e) => setJson(e.target.value)}
-          spellCheck={false}
-          className="h-64 w-full rounded-md border bg-transparent p-3 font-mono text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      {mode !== "kv" ? (
+        <CodeArea
+          value={text}
+          onChange={setText}
+          format={mode}
+          label={`Secret data as ${EDITOR_MODES.find((m) => m.value === mode)?.label}`}
         />
       ) : (
         <div className="flex flex-col gap-2">
@@ -210,10 +253,15 @@ export const KvKeyValueEditor = React.forwardRef<
                   )
                 }
               />
-              <Input
+              {/* A textarea, not an input: inputs strip line breaks, which
+                  silently flattened pasted certificates and private keys. */}
+              <textarea
                 placeholder="value"
                 value={row.value}
-                className="flex-1 font-mono"
+                rows={1}
+                spellCheck={false}
+                aria-label={row.key ? `Value for ${row.key}` : "Value"}
+                className="max-h-64 min-h-9 flex-1 resize-y rounded-md border bg-transparent px-3 py-[7px] font-mono text-sm leading-5 shadow-xs transition-[color,box-shadow,border-color] [field-sizing:content] placeholder:text-muted-foreground hover:border-foreground/20 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
                 onChange={(e) =>
                   setRows((rs) =>
                     rs.map((r, j) =>
@@ -226,6 +274,7 @@ export const KvKeyValueEditor = React.forwardRef<
                 type="button"
                 variant="ghost"
                 size="icon"
+                title="Remove field"
                 onClick={() =>
                   setRows((rs) =>
                     rs.length > 1 ? rs.filter((_, j) => j !== i) : rs,

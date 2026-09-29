@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { baoFetch } from "@/lib/bao-client";
+import { baoFetch, BaoError } from "@/lib/bao-client";
 import { useNamespace } from "@/lib/namespace";
 
 const m = (s: string) => s.replace(/\/$/, "");
@@ -19,8 +19,9 @@ export function usePkiIssuers(mount: string) {
           list: true,
         });
         return res.data?.keys ?? [];
-      } catch {
-        return [] as string[];
+      } catch (err) {
+        if (err instanceof BaoError && err.status === 404) return [] as string[];
+        throw err;
       }
     },
   });
@@ -56,8 +57,9 @@ export function usePkiRoles(mount: string) {
           list: true,
         });
         return res.data?.keys ?? [];
-      } catch {
-        return [] as string[];
+      } catch (err) {
+        if (err instanceof BaoError && err.status === 404) return [] as string[];
+        throw err;
       }
     },
   });
@@ -138,9 +140,22 @@ export function usePkiCerts(mount: string) {
           list: true,
         });
         return res.data?.keys ?? [];
-      } catch {
-        return [] as string[];
+      } catch (err) {
+        if (err instanceof BaoError && err.status === 404) return [] as string[];
+        throw err;
       }
     },
+  });
+}
+
+export function useRevokePkiCert(mount: string) {
+  const qc = useQueryClient();
+  const { namespace } = useNamespace();
+  return useMutation({
+    meta: { success: "Certificate revoked", silentError: true },
+    mutationFn: async (serial_number: string) => baoFetch({
+      path: `${m(mount)}/revoke`, method: "POST", namespace, body: { serial_number },
+    }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["pki-certs", namespace, m(mount)] }),
   });
 }

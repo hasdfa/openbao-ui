@@ -3,9 +3,12 @@
 import { ScrollText, Plus, ShieldCheck, Trash2 } from "lucide-react";
 import * as React from "react";
 
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { CopyButton } from "@/components/copy-button";
+import { QueryError } from "@/components/query-error";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogHeader } from "@/components/ui/dialog";
+import { Disclosure } from "@/components/ui/disclosure";
+import { Dialog, DialogHeader, DialogCancel } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -18,6 +21,8 @@ import {
   useIssueCert,
   usePkiIssuers,
   usePkiRoles,
+  usePkiCerts,
+  useRevokePkiCert,
 } from "@/lib/pki";
 
 const errMsg = (e: unknown) =>
@@ -66,6 +71,32 @@ function Issuers({ mount }: { mount: string }) {
   const [error, setError] = React.useState<string | null>(null);
 
   const hasIssuers = (issuers.data ?? []).length > 0;
+  const rootForm = (
+    <>
+      <h3 className="mb-3 text-sm font-medium">Generate root CA</h3>
+      <form
+        className="flex flex-col gap-3"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          setError(null);
+          if (!cn.trim()) return setError("Common name is required");
+          try {
+            await gen.mutateAsync({ common_name: cn.trim(), ttl });
+            setCn("");
+          } catch (err) {
+            setError(errMsg(err));
+          }
+        }}
+      >
+        <Field label="Common name"><Input value={cn} onChange={(e) => setCn(e.target.value)} placeholder="example.com Root CA" /></Field>
+        <Field label="TTL"><Input value={ttl} onChange={(e) => setTtl(e.target.value)} /></Field>
+        {error ? <p className="text-sm text-destructive">{error}</p> : null}
+        <Button type="submit" size="sm" className="self-start" disabled={gen.isPending}>
+          {gen.isPending ? "Generating…" : "Generate root"}
+        </Button>
+      </form>
+    </>
+  );
 
   return (
     <div className="flex flex-col gap-4">
@@ -73,6 +104,8 @@ function Issuers({ mount }: { mount: string }) {
         <h3 className="mb-2 text-sm font-medium">Certificate authorities</h3>
         {issuers.isLoading ? (
           <p className="text-sm text-muted-foreground">Loading…</p>
+        ) : issuers.isError ? (
+          <QueryError error={issuers.error} what="PKI issuers" />
         ) : hasIssuers ? (
           <ul className="divide-y rounded-md border">
             {(issuers.data ?? []).map((id) => (
@@ -87,30 +120,11 @@ function Issuers({ mount }: { mount: string }) {
         )}
       </div>
 
-      <div className="rounded-xl border p-4">
-        <h3 className="mb-3 text-sm font-medium">Generate root CA</h3>
-        <form
-          className="flex flex-col gap-3"
-          onSubmit={async (e) => {
-            e.preventDefault();
-            setError(null);
-            if (!cn.trim()) return setError("Common name is required");
-            try {
-              await gen.mutateAsync({ common_name: cn.trim(), ttl });
-              setCn("");
-            } catch (err) {
-              setError(errMsg(err));
-            }
-          }}
-        >
-          <Field label="Common name"><Input value={cn} onChange={(e) => setCn(e.target.value)} placeholder="example.com Root CA" /></Field>
-          <Field label="TTL"><Input value={ttl} onChange={(e) => setTtl(e.target.value)} /></Field>
-          {error ? <p className="text-sm text-destructive">{error}</p> : null}
-          <Button type="submit" size="sm" className="self-start" disabled={gen.isPending}>
-            {gen.isPending ? "Generating…" : "Generate root"}
-          </Button>
-        </form>
-      </div>
+      {hasIssuers ? (
+        <Disclosure label="Generate another root CA">{rootForm}</Disclosure>
+      ) : (
+        <div className="rounded-xl border p-4">{rootForm}</div>
+      )}
     </div>
   );
 }
@@ -126,6 +140,7 @@ function Roles({ mount }: { mount: string }) {
   const [anyName, setAnyName] = React.useState(false);
   const [maxTtl, setMaxTtl] = React.useState("72h");
   const [error, setError] = React.useState<string | null>(null);
+  const [removing, setRemoving] = React.useState<string | null>(null);
 
   return (
     <div>
@@ -139,10 +154,10 @@ function Roles({ mount }: { mount: string }) {
         {(roles.data ?? []).map((r) => (
           <li key={r} className="flex items-center justify-between px-3 py-2 text-sm">
             <span className="font-mono">{r}</span>
-            <Button variant="ghost" size="icon" title="Delete" onClick={() => del.mutate(r)}><Trash2 /></Button>
+            <Button variant="ghost" size="icon" title="Delete" onClick={() => setRemoving(r)}><Trash2 /></Button>
           </li>
         ))}
-        {roles.data?.length === 0 ? (
+        {roles.isError ? <li className="p-3"><QueryError error={roles.error} what="PKI roles" /></li> : roles.data?.length === 0 ? (
           <li className="px-3 py-6 text-center text-sm text-muted-foreground">No roles yet.</li>
         ) : null}
       </ul>
@@ -184,24 +199,36 @@ function Roles({ mount }: { mount: string }) {
             </div>
             {error ? <p className="text-sm text-destructive">{error}</p> : null}
             <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+              <DialogCancel onClose={() => setOpen(false)} />
               <Button type="submit" disabled={create.isPending}>Save</Button>
             </div>
           </form>
         </Dialog>
       ) : null}
+      <ConfirmDialog
+        open={!!removing}
+        onClose={() => setRemoving(null)}
+        onConfirm={async () => { await del.mutateAsync(removing!); setRemoving(null); }}
+        title={`Delete role "${removing}"?`}
+        confirmLabel="Delete"
+        pending={del.isPending}
+        error={del.error ? errMsg(del.error) : null}
+      />
     </div>
   );
 }
 
 function Issue({ mount }: { mount: string }) {
   const roles = usePkiRoles(mount);
+  const certs = usePkiCerts(mount);
   const issue = useIssueCert(mount);
+  const revoke = useRevokePkiCert(mount);
   const [role, setRole] = React.useState("");
   const [cn, setCn] = React.useState("");
   const [ttl, setTtl] = React.useState("24h");
   const [error, setError] = React.useState<string | null>(null);
   const [result, setResult] = React.useState<IssuedCert | null>(null);
+  const [revoking, setRevoking] = React.useState<string | null>(null);
 
   return (
     <div className="flex flex-col gap-4">
@@ -246,6 +273,34 @@ function Issue({ mount }: { mount: string }) {
           <p className="text-xs text-muted-foreground">The private key is shown once — copy it now.</p>
         </div>
       ) : null}
+
+      {certs.data?.length ? (
+        <div className="rounded-xl border p-4">
+          <h3 className="mb-2 text-sm font-medium">Issued certificates</h3>
+          {certs.data.map((serial) => (
+            <div key={serial} className="flex items-center justify-between gap-3 border-t py-2 text-sm">
+              <code className="min-w-0 truncate">{serial}</code>
+              <Button size="sm" variant="outline" onClick={() => { revoke.reset(); setRevoking(serial); }}>Revoke</Button>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      <ConfirmDialog
+        open={!!revoking}
+        onClose={() => setRevoking(null)}
+        onConfirm={async () => {
+          if (!revoking) return;
+          await revoke.mutateAsync(revoking);
+          setRevoking(null);
+        }}
+        title="Revoke certificate?"
+        description="Revocation is permanent and will be published in the CRL."
+        confirmText={revoking?.slice(-8)}
+        confirmLabel="Revoke certificate"
+        warning="This cannot be undone."
+        pending={revoke.isPending}
+        error={revoke.error ? errMsg(revoke.error) : null}
+      />
     </div>
   );
 }

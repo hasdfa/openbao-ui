@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { baoFetch } from "@/lib/bao-client";
+import { baoFetch, BaoError } from "@/lib/bao-client";
 import { useNamespace } from "@/lib/namespace";
 
 const m = (s: string) => s.replace(/\/$/, "");
@@ -19,8 +19,9 @@ export function useDbConnections(mount: string) {
           list: true,
         });
         return res.data?.keys ?? [];
-      } catch {
-        return [] as string[];
+      } catch (err) {
+        if (err instanceof BaoError && err.status === 404) return [] as string[];
+        throw err;
       }
     },
   });
@@ -67,8 +68,9 @@ export function useDbRoles(mount: string) {
           list: true,
         });
         return res.data?.keys ?? [];
-      } catch {
-        return [] as string[];
+      } catch (err) {
+        if (err instanceof BaoError && err.status === 404) return [] as string[];
+        throw err;
       }
     },
   });
@@ -114,17 +116,33 @@ export function useDeleteDbRole(mount: string) {
   });
 }
 
-export type DbCreds = { username: string; password: string };
+export type DbCreds = {
+  username: string;
+  password: string;
+  lease_id: string;
+  lease_duration: number;
+  renewable: boolean;
+};
 
 export function useGenerateDbCreds(mount: string) {
   const { namespace } = useNamespace();
   return useMutation({
     mutationFn: async (role: string) => {
-      const res = await baoFetch<{ data: DbCreds }>({
+      const res = await baoFetch<{
+        data: Pick<DbCreds, "username" | "password">;
+        lease_id: string;
+        lease_duration: number;
+        renewable: boolean;
+      }>({
         path: `${m(mount)}/creds/${role}`,
         namespace,
       });
-      return res.data;
+      return {
+        ...res.data,
+        lease_id: res.lease_id,
+        lease_duration: res.lease_duration,
+        renewable: res.renewable,
+      };
     },
   });
 }

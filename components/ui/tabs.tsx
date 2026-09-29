@@ -80,7 +80,7 @@ function TabsTrigger({
         ctx.setValue(value);
       }}
       className={cn(
-        "inline-flex flex-1 items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50",
+        "inline-flex flex-1 items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium transition-[color,background-color,box-shadow] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50",
         active
           ? "bg-card text-foreground shadow-sm"
           : "hover:text-foreground",
@@ -101,7 +101,7 @@ function TabsContent({
   return (
     <div
       role="tabpanel"
-      className={cn("duration-200 animate-in fade-in-0", className)}
+      className={className}
       {...props}
     />
   );

@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { baoFetch } from "@/lib/bao-client";
+import { baoFetch, BaoError } from "@/lib/bao-client";
 import { useNamespace } from "@/lib/namespace";
 
 // --- current token (Profile) ---
@@ -53,8 +53,9 @@ export function useNamespacesDetailed() {
           path,
           id: info[path]?.id ?? "",
         }));
-      } catch {
-        return []; // 404 when none exist
+      } catch (err) {
+        if (err instanceof BaoError && err.status === 404) return []; // 404 when none exist
+        throw err;
       }
     },
   });
@@ -143,8 +144,9 @@ export function useLoggers() {
           out[name] = typeof v === "string" ? v : v.log_level ?? "";
         }
         return out;
-      } catch {
-        return {};
+      } catch (err) {
+        if (err instanceof BaoError && err.status === 404) return {};
+        throw err;
       }
     },
   });

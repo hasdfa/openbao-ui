@@ -30,6 +30,7 @@ export type KvMetadata = {
   oldest_version: number;
   max_versions: number;
   cas_required: boolean;
+  delete_version_after: string;
   custom_metadata: Record<string, string> | null;
   created_time: string;
   updated_time: string;
@@ -283,6 +284,7 @@ export function useKvMetadata(
         oldest_version: 1,
         max_versions: 0,
         cas_required: false,
+        delete_version_after: "0s",
         custom_metadata: null,
         created_time: "",
         updated_time: "",
@@ -295,6 +297,22 @@ export function useKvMetadata(
 }
 
 export type KvRowMeta = { version: number; updated: string | null };
+
+// Row metadata is one request per secret; a big folder fired them all at once
+// and could trip a rate-limit quota. Keep a few in flight, queue the rest.
+const META_CONCURRENCY = 6;
+let metaInFlight = 0;
+const metaQueue: (() => void)[] = [];
+async function throttled<T>(fn: () => Promise<T>): Promise<T> {
+  if (metaInFlight >= META_CONCURRENCY) await new Promise<void>((r) => metaQueue.push(r));
+  metaInFlight++;
+  try {
+    return await fn();
+  } finally {
+    metaInFlight--;
+    metaQueue.shift()?.();
+  }
+}
 
 /** How many secrets a listing will fetch row metadata for before giving up. */
 export const KV_ROW_META_LIMIT = 100;
@@ -317,13 +335,14 @@ export function useKvRowMeta(mount: string, paths: string[], enabled: boolean) {
         queryKey: ["kv-metadata", namespace, m, p, v2],
         enabled: active,
         staleTime: 30_000,
-        queryFn: async () => {
-          const res = await baoFetch<{ data: KvMetadata }>({
-            path: `${m}/metadata/${p}`,
-            namespace,
-          });
-          return res.data;
-        },
+        queryFn: () =>
+          throttled(async () => {
+            const res = await baoFetch<{ data: KvMetadata }>({
+              path: `${m}/metadata/${p}`,
+              namespace,
+            });
+            return res.data;
+          }),
       };
     }),
     combine: (results) => {
@@ -481,6 +500,27 @@ export function useKvDeleteMetadata(mount: string, path: string) {
         method: "DELETE",
         namespace,
       }),
+    onSuccess: invalidate,
+  });
+}
+
+export type KvMetadataSettings = {
+  max_versions: number;
+  cas_required: boolean;
+  delete_version_after: string;
+  custom_metadata: Record<string, string>;
+};
+
+/** Per-secret KV v2 settings (version limit, CAS, auto-delete, custom metadata). */
+export function useKvWriteMetadata(mount: string, path: string) {
+  const { namespace } = useNamespace();
+  const invalidate = useInvalidateSecret(mount, path);
+  const m = stripSlash(mount);
+  const p = stripSlash(path);
+  return useMutation({
+    meta: { success: "Secret settings saved", silentError: true },
+    mutationFn: async (settings: KvMetadataSettings) =>
+      baoFetch({ path: `${m}/metadata/${p}`, method: "POST", namespace, body: settings }),
     onSuccess: invalidate,
   });
 }

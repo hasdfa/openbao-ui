@@ -248,6 +248,8 @@ export function useDeleteProject() {
     onSettled: () => {
       qc.invalidateQueries({ queryKey: ["project-folders", namespace] });
       qc.invalidateQueries({ queryKey: ["kv-list", namespace] });
+      qc.invalidateQueries({ queryKey: ["project-credentials", namespace] });
+      qc.invalidateQueries({ queryKey: ["policies", namespace] });
     },
   });
 }

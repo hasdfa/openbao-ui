@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { baoFetch } from "@/lib/bao-client";
+import { baoFetch, BaoError } from "@/lib/bao-client";
 import { useNamespace } from "@/lib/namespace";
 
 // Cubbyhole is a KV-v1-style, per-token private store at cubbyhole/<path>.
@@ -22,8 +22,9 @@ export function useCubbyholeList(folder: string) {
           list: true,
         });
         return res.data?.keys ?? [];
-      } catch {
-        return [] as string[];
+      } catch (err) {
+        if (err instanceof BaoError && err.status === 404) return [] as string[];
+        throw err;
       }
     },
   });

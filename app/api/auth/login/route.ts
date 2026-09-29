@@ -4,11 +4,26 @@ import { isCrossSiteRequest } from "@/lib/csrf";
 import { openbao, OpenBaoRequestError } from "@/lib/openbao";
 import { setToken } from "@/lib/session";
 
-type LoginBody =
+type LoginBody = { namespace?: string } & (
   | { method: "token"; token: string }
   | { method: "userpass"; mount?: string; username: string; password: string }
   | { method: "ldap"; mount?: string; username: string; password: string }
-  | { method: "approle"; mount?: string; roleId: string; secretId: string };
+  | { method: "approle"; mount?: string; roleId: string; secretId: string }
+);
+
+// Same cookie the client's namespace switcher writes (lib/namespace.tsx).
+const NS_COOKIE = "bao_ns";
+const NS_PATH = /^[A-Za-z0-9_.-]+(\/[A-Za-z0-9_.-]+)*$/;
+
+/** Open the app in the namespace the user signed in to, so requests aren't sent to root. */
+function withNamespace(res: NextResponse, namespace: string): NextResponse {
+  res.cookies.set(NS_COOKIE, namespace, {
+    path: "/",
+    maxAge: 60 * 60 * 24 * 30,
+    sameSite: "lax",
+  });
+  return res;
+}
 
 /**
  * POST /ui2/api/auth/login
@@ -27,6 +42,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
+  const namespace = (body.namespace ?? "").trim().replace(/^\/+|\/+$/g, "");
+  if (namespace && !NS_PATH.test(namespace)) {
+    return NextResponse.json({ error: "Invalid namespace path" }, { status: 400 });
+  }
+  const ns = namespace || undefined;
+
   try {
     if (body.method === "token") {
       const token = body.token?.trim();
@@ -35,10 +56,10 @@ export async function POST(req: Request) {
       }
       const lookup = await openbao.lookupSelf(token);
       await setToken(token, lookup.data.ttl);
-      return NextResponse.json({
-        displayName: lookup.data.display_name,
-        policies: lookup.data.policies,
-      });
+      return withNamespace(
+        NextResponse.json({ displayName: lookup.data.display_name, policies: lookup.data.policies }),
+        namespace,
+      );
     }
 
     if (body.method === "userpass" || body.method === "ldap") {
@@ -51,13 +72,13 @@ export async function POST(req: Request) {
       }
       const res =
         body.method === "ldap"
-          ? await openbao.ldapLogin(body.mount || "ldap", username, password)
-          : await openbao.userpassLogin(body.mount || "userpass", username, password);
+          ? await openbao.ldapLogin(body.mount || "ldap", username, password, ns)
+          : await openbao.userpassLogin(body.mount || "userpass", username, password, ns);
       await setToken(res.auth.client_token, res.auth.lease_duration);
-      return NextResponse.json({
-        displayName: username,
-        policies: res.auth.policies,
-      });
+      return withNamespace(
+        NextResponse.json({ displayName: username, policies: res.auth.policies }),
+        namespace,
+      );
     }
 
     if (body.method === "approle") {
@@ -72,12 +93,13 @@ export async function POST(req: Request) {
         body.mount || "approle",
         roleId,
         secretId,
+        ns,
       );
       await setToken(res.auth.client_token, res.auth.lease_duration);
-      return NextResponse.json({
-        displayName: "approle",
-        policies: res.auth.policies,
-      });
+      return withNamespace(
+        NextResponse.json({ displayName: "approle", policies: res.auth.policies }),
+        namespace,
+      );
     }
 
     return NextResponse.json({ error: "Unknown auth method" }, { status: 400 });

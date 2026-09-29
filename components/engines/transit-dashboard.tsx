@@ -3,9 +3,11 @@
 import { KeyRound, Plus, RotateCcw } from "lucide-react";
 import * as React from "react";
 
+import { ConfirmDialog } from "@/components/confirm-dialog";
+import { QueryError } from "@/components/query-error";
 import { CopyButton } from "@/components/copy-button";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogHeader } from "@/components/ui/dialog";
+import { Dialog, DialogHeader, DialogCancel } from "@/components/ui/dialog";
 import { Disclosure } from "@/components/ui/disclosure";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -59,6 +61,8 @@ export function TransitDashboard({ mount }: { mount: string }) {
         <div className="w-64 shrink-0 overflow-auto border-r p-2">
           {keys.isLoading ? (
             <p className="p-2 text-sm text-muted-foreground">Loading…</p>
+          ) : keys.isError ? (
+            <QueryError error={keys.error} what="transit keys" className="m-2" />
           ) : keys.data?.length === 0 ? (
             <p className="p-2 text-sm text-muted-foreground">No keys yet.</p>
           ) : (
@@ -86,7 +90,7 @@ export function TransitDashboard({ mount }: { mount: string }) {
               Select a key, or create one.
             </div>
           ) : (
-            <KeyDetail mount={mount} data={key.data} />
+            <KeyDetail key={key.data.name} mount={mount} data={key.data} />
           )}
         </div>
       </div>
@@ -108,6 +112,7 @@ export function TransitDashboard({ mount }: { mount: string }) {
 
 function KeyDetail({ mount, data }: { mount: string; data: ReturnType<typeof useTransitKey>["data"] & object }) {
   const rotate = useRotateTransitKey(mount, data.name);
+  const [confirm, setConfirm] = React.useState(false);
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-5">
@@ -118,13 +123,14 @@ function KeyDetail({ mount, data }: { mount: string; data: ReturnType<typeof use
             {data.type} · version {data.latest_version}
           </p>
         </div>
-        <Button size="sm" variant="outline" onClick={() => rotate.mutate()} disabled={rotate.isPending}>
+        <Button size="sm" variant="outline" onClick={() => setConfirm(true)} disabled={rotate.isPending}>
           <RotateCcw /> Rotate
         </Button>
       </div>
+      <ConfirmDialog open={confirm} onClose={() => setConfirm(false)} onConfirm={async () => { await rotate.mutateAsync(); setConfirm(false); }} title={`Rotate key "${data.name}"?`} description="Key rotation cannot be undone." destructive={false} confirmLabel="Rotate key" pending={rotate.isPending} error={rotate.error ? errMsg(rotate.error) : null} />
 
       {data.supports_encryption ? (
-        <CryptoTool mount={mount} name={data.name} />
+        <CryptoTool key={data.name} mount={mount} name={data.name} />
       ) : (
         <p className="text-sm text-muted-foreground">
           This key type ({data.type}) is used for signing/verification rather than
@@ -284,7 +290,7 @@ function CreateKeyDialog({
         </div>
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
         <div className="flex justify-end gap-2">
-          <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+          <DialogCancel onClose={onClose} />
           <Button type="submit" disabled={create.isPending}>Create</Button>
         </div>
       </form>

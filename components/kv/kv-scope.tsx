@@ -9,6 +9,7 @@ import { CopyButton } from "@/components/copy-button";
 import { ColorDot } from "@/components/label-editor";
 import { Menu, MenuItem, MenuLabel } from "@/components/ui/menu";
 import { cn } from "@/lib/utils";
+import { secretsHref } from "@/lib/secrets-href";
 
 export type EnvOption = {
   mount: string;
@@ -67,7 +68,7 @@ export function KvScopeBar({
   const pathSegs = [mount, ...segments];
   const fullPath = pathSegs.join("/");
 
-  const hrefFor = (m: string) => `/secrets/${[m, ...segments].join("/")}`;
+  const hrefFor = (m: string) => secretsHref(m, ...segments);
 
   return (
     <div className="px-4 py-3 md:px-6">
@@ -116,7 +117,7 @@ export function KvScopeBar({
                         current={p.project === projectSeg}
                         onSelect={() => {
                           close();
-                          router.push(`/secrets/${mount}/${p.project}`);
+                          router.push(secretsHref(mount, p.project));
                         }}
                       >
                         <ColorDot color={p.color} className="size-2 shrink-0" />
@@ -213,7 +214,7 @@ export function KvScopeBar({
               <React.Fragment key={i}>
                 {i > 0 ? <span aria-hidden>/</span> : null}
                 <Link
-                  href={`/secrets/${pathSegs.slice(0, i + 1).join("/")}`}
+                  href={secretsHref(...pathSegs.slice(0, i + 1))}
                   className="truncate rounded-sm py-0.5 transition-colors duration-150 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
                 >
                   {seg}
@@ -290,7 +291,7 @@ function EnvironmentStrip({
           return (
             <li key={env.mount}>
               <Link
-                href={`/secrets/${[env.mount, ...segments].join("/")}`}
+                href={secretsHref(env.mount, ...segments)}
                 aria-current={isCurrent ? "page" : undefined}
                 title={
                   isCurrent

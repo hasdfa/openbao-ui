@@ -3,9 +3,11 @@
 import { Plus, Terminal, Trash2 } from "lucide-react";
 import * as React from "react";
 
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { CopyButton } from "@/components/copy-button";
+import { QueryError } from "@/components/query-error";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogHeader } from "@/components/ui/dialog";
+import { Dialog, DialogHeader, DialogCancel } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { BaoError } from "@/lib/bao-client";
@@ -58,6 +60,8 @@ function CaSection({ mount }: { mount: string }) {
       <h3 className="mb-3 text-sm font-medium">Certificate authority</h3>
       {ca.isLoading ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
+      ) : ca.isError ? (
+        <QueryError error={ca.error} what="the SSH signing key" />
       ) : ca.data ? (
         <div className="flex items-center gap-2 rounded-md border bg-muted/50 p-2">
           <code className="min-w-0 flex-1 truncate text-xs">{ca.data}</code>
@@ -71,6 +75,7 @@ function CaSection({ mount }: { mount: string }) {
           <Button size="sm" onClick={() => configure.mutate()} disabled={configure.isPending}>
             Generate signing key
           </Button>
+          {configure.error ? <p role="alert" className="text-sm text-destructive">{errMsg(configure.error)}</p> : null}
         </div>
       )}
     </section>
@@ -87,6 +92,7 @@ function RolesSection({ mount }: { mount: string }) {
   const [defaultUser, setDefaultUser] = React.useState("");
   const [ttl, setTtl] = React.useState("30m");
   const [error, setError] = React.useState<string | null>(null);
+  const [removing, setRemoving] = React.useState<string | null>(null);
 
   return (
     <section>
@@ -100,10 +106,10 @@ function RolesSection({ mount }: { mount: string }) {
         {(roles.data ?? []).map((r) => (
           <li key={r} className="flex items-center justify-between px-3 py-2 text-sm">
             <span className="font-mono">{r}</span>
-            <Button variant="ghost" size="icon" title="Delete" onClick={() => del.mutate(r)}><Trash2 /></Button>
+            <Button variant="ghost" size="icon" title="Delete" onClick={() => setRemoving(r)}><Trash2 /></Button>
           </li>
         ))}
-        {roles.data?.length === 0 ? (
+        {roles.isError ? <li className="p-3"><QueryError error={roles.error} what="SSH roles" /></li> : roles.data?.length === 0 ? (
           <li className="px-3 py-6 text-center text-sm text-muted-foreground">No roles yet.</li>
         ) : null}
       </ul>
@@ -137,12 +143,21 @@ function RolesSection({ mount }: { mount: string }) {
             <Field label="TTL"><Input value={ttl} onChange={(e) => setTtl(e.target.value)} /></Field>
             {error ? <p className="text-sm text-destructive">{error}</p> : null}
             <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+              <DialogCancel onClose={() => setOpen(false)} />
               <Button type="submit" disabled={create.isPending}>Save</Button>
             </div>
           </form>
         </Dialog>
       ) : null}
+      <ConfirmDialog
+        open={!!removing}
+        onClose={() => setRemoving(null)}
+        onConfirm={async () => { await del.mutateAsync(removing!); setRemoving(null); }}
+        title={`Delete role "${removing}"?`}
+        confirmLabel="Delete"
+        pending={del.isPending}
+        error={del.error ? errMsg(del.error) : null}
+      />
     </section>
   );
 }

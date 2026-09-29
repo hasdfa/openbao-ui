@@ -6,8 +6,10 @@ import * as React from "react";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { CopyButton } from "@/components/copy-button";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { DetailPane, ListDetail, ListPane } from "@/components/list-detail";
 import { BaoError } from "@/lib/bao-client";
 import {
   useDeletePasswordPolicy,
@@ -16,6 +18,7 @@ import {
   usePasswordPolicy,
   useWritePasswordPolicy,
 } from "@/lib/password-policies";
+import { useUnsaved } from "@/lib/unsaved";
 
 const errMsg = (e: unknown) =>
   e instanceof BaoError ? e.errors.join(", ") : "Something went wrong";
@@ -40,6 +43,7 @@ export default function PasswordPoliciesPage() {
   const [name, setName] = React.useState("");
   const [body, setBody] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
+  const [q, setQ] = React.useState("");
   const [confirmDelete, setConfirmDelete] = React.useState(false);
   const [sample, setSample] = React.useState<string | null>(null);
 
@@ -48,9 +52,19 @@ export default function PasswordPoliciesPage() {
   const del = useDeletePasswordPolicy();
   const generate = useGeneratePassword();
 
-  React.useEffect(() => {
-    if (policy.data != null) setBody(policy.data);
-  }, [policy.data]);
+  // Load once per selection; until the selected policy has loaded, the editor
+  // must not show (or save) the previous policy's text.
+  const [loadedFor, setLoadedFor] = React.useState<string | null>(null);
+  if (!creating && selected && policy.data != null && loadedFor !== selected) {
+    setLoadedFor(selected);
+    setBody(policy.data);
+  }
+  const ready = creating || (!!selected && loadedFor === selected);
+
+  const dirty = creating
+    ? body !== SAMPLE || name.trim() !== ""
+    : ready && body !== (policy.data ?? "");
+  const guard = useUnsaved(dirty);
 
   function openNew() {
     setCreating(true);
@@ -64,6 +78,8 @@ export default function PasswordPoliciesPage() {
     setCreating(false);
     setSelected(n);
     setName(n);
+    setBody("");
+    setLoadedFor(null);
     setError(null);
     setSample(null);
   }
@@ -72,6 +88,9 @@ export default function PasswordPoliciesPage() {
     setError(null);
     const n = name.trim();
     if (!n) return setError("Name is required");
+    if (creating && list.data?.includes(n)) {
+      return setError(`A policy named "${n}" already exists. Open it from the list to edit it.`);
+    }
     try {
       await write.mutateAsync({ name: n, policy: body });
       setCreating(false);
@@ -82,24 +101,43 @@ export default function PasswordPoliciesPage() {
   }
 
   return (
-    <div className="flex h-full">
-      <div className="w-64 shrink-0 overflow-auto border-r p-3">
-        <Button size="sm" className="mb-2 w-full" onClick={openNew}>
+    <ListDetail
+      className="h-full"
+      open={creating || !!selected}
+      onBack={() => guard(() => {
+        setSelected(null);
+        setCreating(false);
+      })}
+      backLabel="All password policies"
+    >
+      <ListPane className="overflow-auto p-3 md:w-64">
+        <Button size="sm" className="mb-2 w-full" onClick={() => guard(openNew)}>
           <Plus /> New policy
         </Button>
+        {(list.data?.length ?? 0) > 8 ? (
+          <Input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Filter…"
+            aria-label="Filter password policies"
+            className="mb-2 h-8"
+          />
+        ) : null}
         {list.isLoading ? (
           <p className="p-2 text-sm text-muted-foreground">Loading…</p>
         ) : (
           <ul>
-            {(list.data ?? []).map((n) => (
+            {(list.data ?? [])
+              .filter((n) => n.toLowerCase().includes(q.trim().toLowerCase()))
+              .map((n) => (
               <li key={n}>
                 <button
-                  onClick={() => openExisting(n)}
+                  onClick={() => guard(() => openExisting(n))}
                   className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent ${
                     selected === n && !creating ? "bg-accent font-medium" : ""
                   }`}
                 >
-                  <FileText className="size-4 text-muted-foreground" />
+                  <FileText className="size-4 shrink-0 text-muted-foreground" />
                   <span className="truncate font-mono">{n}</span>
                 </button>
               </li>
@@ -109,9 +147,9 @@ export default function PasswordPoliciesPage() {
             ) : null}
           </ul>
         )}
-      </div>
+      </ListPane>
 
-      <div className="min-w-0 flex-1 p-6">
+      <DetailPane className="overflow-auto p-4 md:p-6">
         {!creating && !selected ? (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
             Password policies generate strong passwords for dynamic secrets.
@@ -131,19 +169,27 @@ export default function PasswordPoliciesPage() {
 
             <div className="flex min-h-0 flex-1 flex-col gap-2">
               <Label htmlFor="pp-body">Policy (HCL)</Label>
-              <textarea
-                id="pp-body"
-                value={body}
-                spellCheck={false}
-                onChange={(e) => setBody(e.target.value)}
-                className="min-h-0 flex-1 rounded-md border bg-transparent p-3 font-mono text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              />
+              {!ready ? (
+                policy.isError ? (
+                  <p role="alert" className="text-sm text-destructive">{errMsg(policy.error)}</p>
+                ) : (
+                  <Skeleton className="min-h-40 flex-1" />
+                )
+              ) : (
+                <textarea
+                  id="pp-body"
+                  value={body}
+                  spellCheck={false}
+                  onChange={(e) => setBody(e.target.value)}
+                  className="min-h-0 flex-1 rounded-md border bg-transparent p-3 font-mono text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                />
+              )}
             </div>
 
             {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
             <div className="flex items-center gap-2">
-              <Button onClick={save} disabled={write.isPending}>
+              <Button onClick={save} disabled={write.isPending || !ready}>
                 {write.isPending ? "Saving…" : "Save policy"}
               </Button>
               {!creating && selected ? (
@@ -172,7 +218,7 @@ export default function PasswordPoliciesPage() {
             ) : null}
           </div>
         )}
-      </div>
+      </DetailPane>
 
       <ConfirmDialog
         open={confirmDelete}
@@ -186,7 +232,8 @@ export default function PasswordPoliciesPage() {
         confirmText={selected ?? undefined}
         confirmLabel="Delete policy"
         pending={del.isPending}
+        error={del.error ? errMsg(del.error) : null}
       />
-    </div>
+    </ListDetail>
   );
 }

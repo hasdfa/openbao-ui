@@ -10,6 +10,7 @@ import { NamespaceSwitcher } from "@/components/namespace-switcher";
 import { SessionBar } from "@/components/session-bar";
 import { ThemeToggle } from "@/components/theme";
 import { useCan } from "@/lib/acl";
+import { useMounts } from "@/lib/kv";
 import { BASE_PATH } from "@/lib/base-path";
 import { cn } from "@/lib/utils";
 
@@ -23,6 +24,11 @@ export function AppSidebar({
   const pathname = usePathname();
   const rel = pathname.replace(new RegExp(`^${BASE_PATH}`), "") || "/";
   const can = useCan();
+  // sys/internal/ui/mounts lists only engines this token can use, so an app
+  // developer with KV paths but no sys/mounts access still gets Secrets.
+  const mounts = useMounts();
+  const hasEngines = Object.keys(mounts.data ?? {}).length > 0;
+  const seesSecrets = mounts.isLoading || hasEngines || can("sys/mounts");
 
   // capability-aware: hide what the token can't use (Access stays — the
   // Capabilities tester always works on your own token)
@@ -30,8 +36,8 @@ export function AppSidebar({
   const accessHref = can("sys/policies/acl") ? "/access" : "/access/capabilities";
   const nav = [
     { href: "/", label: "Overview", icon: LayoutDashboard, show: true },
-    { href: "/secrets", label: "Secrets", icon: KeyRound, show: can("sys/mounts") },
-    { href: "/guides", label: "Guides", icon: BookOpen, show: can("sys/mounts") },
+    { href: "/secrets", label: "Secrets", icon: KeyRound, show: seesSecrets },
+    { href: "/guides", label: "Guides", icon: BookOpen, show: seesSecrets },
     { href: accessHref, label: "Access", icon: Users, show: true },
     { href: "/operations", label: "Operations", icon: Activity, show: can("sys/audit") },
     { href: "/settings", label: "Settings", icon: Settings, show: true },

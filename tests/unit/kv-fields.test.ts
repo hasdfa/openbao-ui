@@ -55,6 +55,12 @@ describe("jsonToRows", () => {
     expect(rowsToData([{ key: "", value: "leftover" }])).toEqual({});
   });
 
+  it("refuses a value typed into the blank row without a key", () => {
+    expect(() => rowsToData([{ key: "", value: "orphan", placeholder: true }])).toThrow(
+      /needs a key/,
+    );
+  });
+
   it("refuses duplicate keys instead of silently keeping the last", () => {
     expect(() =>
       rowsToData([

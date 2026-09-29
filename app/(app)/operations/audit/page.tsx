@@ -28,7 +28,7 @@ export default function AuditPage() {
   });
 
   return (
-    <div className="mx-auto max-w-4xl p-8">
+    <div className="max-w-4xl px-4 py-6 md:px-8">
       <p className="mb-3 text-sm text-muted-foreground">
         Audit devices record every request &amp; response for compliance.
       </p>

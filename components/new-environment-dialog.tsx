@@ -4,7 +4,7 @@ import * as React from "react";
 
 import { ColorPicker, LABEL_COLORS } from "@/components/label-editor";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogHeader } from "@/components/ui/dialog";
+import { Dialog, DialogHeader, DialogCancel } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label as FieldLabel } from "@/components/ui/label";
 import { useEnableSecretEngine } from "@/lib/kv";
@@ -87,7 +87,7 @@ export function NewEnvironmentDialog({ onClose }: { onClose: () => void }) {
 
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
         <div className="flex justify-end gap-2 border-t pt-4">
-          <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+          <DialogCancel onClose={onClose} />
           <Button type="submit" disabled={pending}>
             {pending ? "Creating…" : "Create environment"}
           </Button>

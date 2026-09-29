@@ -4,12 +4,14 @@ import { Plus, Trash2, User, Users } from "lucide-react";
 import * as React from "react";
 
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { QueryError } from "@/components/query-error";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogHeader } from "@/components/ui/dialog";
+import { Dialog, DialogHeader, DialogCancel } from "@/components/ui/dialog";
 import { Disclosure } from "@/components/ui/disclosure";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { DetailPane, ListDetail, ListPane } from "@/components/list-detail";
 import { BaoError } from "@/lib/bao-client";
 import {
   IdentityRef,
@@ -28,7 +30,7 @@ const errMsg = (e: unknown) =>
 
 export default function IdentityPage() {
   return (
-    <div className="p-6">
+    <div className="px-4 py-6 md:px-8">
       <Tabs defaultValue="entities">
         <TabsList className="max-w-xs">
           <TabsTrigger value="entities">Entities</TabsTrigger>
@@ -52,6 +54,7 @@ function ListColumn({
   onSelect,
   onNew,
   icon,
+  error,
 }: {
   title: string;
   items: IdentityRef[];
@@ -59,13 +62,15 @@ function ListColumn({
   onSelect: (id: string) => void;
   onNew: () => void;
   icon: React.ReactNode;
+  error?: unknown;
 }) {
   return (
-    <div className="w-64 shrink-0 border-r pr-3">
+    <ListPane className="max-md:mb-4 md:w-64 md:pr-3">
       <Button size="sm" className="mb-2 w-full" onClick={onNew}>
         <Plus /> New {title}
       </Button>
       <ul>
+        {error ? <li className="p-2"><QueryError error={error} what={title === "entity" ? "entities" : `${title}s`} /></li> : null}
         {items.map((it) => (
           <li key={it.id}>
             <button
@@ -79,11 +84,11 @@ function ListColumn({
             </button>
           </li>
         ))}
-        {items.length === 0 ? (
+        {!error && items.length === 0 ? (
           <li className="px-2 py-4 text-sm text-muted-foreground">None yet.</li>
         ) : null}
       </ul>
-    </div>
+    </ListPane>
   );
 }
 
@@ -111,16 +116,22 @@ function EntitiesPane() {
   const del = useDeleteEntity();
 
   return (
-    <div className="flex min-h-[60vh] gap-4">
+    <ListDetail
+      className="min-h-[60vh] md:gap-4"
+      open={!!selected}
+      onBack={() => setSelected(null)}
+      backLabel="All entities"
+    >
       <ListColumn
         title="entity"
         items={list.data ?? []}
+        error={list.isError ? list.error : undefined}
         selectedId={selected}
         onSelect={setSelected}
         onNew={() => setCreating(true)}
         icon={<User className="size-4 text-muted-foreground" />}
       />
-      <div className="min-w-0 flex-1">
+      <DetailPane>
         {!entity.data ? (
           <p className="text-sm text-muted-foreground">Select an entity.</p>
         ) : (
@@ -155,7 +166,7 @@ function EntitiesPane() {
             </Disclosure>
           </div>
         )}
-      </div>
+      </DetailPane>
 
       {creating ? (
         <CreateDialog
@@ -180,7 +191,7 @@ function EntitiesPane() {
         confirmLabel="Delete entity"
         pending={del.isPending}
       />
-    </div>
+    </ListDetail>
   );
 }
 
@@ -194,16 +205,22 @@ function GroupsPane() {
   const del = useDeleteGroup();
 
   return (
-    <div className="flex min-h-[60vh] gap-4">
+    <ListDetail
+      className="min-h-[60vh] md:gap-4"
+      open={!!selected}
+      onBack={() => setSelected(null)}
+      backLabel="All groups"
+    >
       <ListColumn
         title="group"
         items={list.data ?? []}
+        error={list.isError ? list.error : undefined}
         selectedId={selected}
         onSelect={setSelected}
         onNew={() => setCreating(true)}
         icon={<Users className="size-4 text-muted-foreground" />}
       />
-      <div className="min-w-0 flex-1">
+      <DetailPane>
         {!group.data ? (
           <p className="text-sm text-muted-foreground">Select a group.</p>
         ) : (
@@ -231,7 +248,7 @@ function GroupsPane() {
             </Disclosure>
           </div>
         )}
-      </div>
+      </DetailPane>
 
       {creating ? (
         <CreateDialog
@@ -256,7 +273,7 @@ function GroupsPane() {
         confirmLabel="Delete group"
         pending={del.isPending}
       />
-    </div>
+    </ListDetail>
   );
 }
 
@@ -316,7 +333,7 @@ function CreateDialog({
         </div>
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
         <div className="flex justify-end gap-2">
-          <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+          <DialogCancel onClose={onClose} />
           <Button type="submit" disabled={pending}>Create</Button>
         </div>
       </form>

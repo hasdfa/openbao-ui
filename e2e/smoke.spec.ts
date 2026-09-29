@@ -151,9 +151,13 @@ test("foundation: command palette and dark mode", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
 
   // ⌘K / Ctrl+K opens the command palette and can navigate
-  await page.keyboard.press("Control+k");
+  // The heading is server-rendered, so it can show before the shortcut
+  // listener hydrates; retry the press rather than lose it.
   const input = page.getByPlaceholder("Jump to…");
-  await expect(input).toBeVisible();
+  await expect(async () => {
+    if (!(await input.isVisible())) await page.keyboard.press("Control+k");
+    await expect(input).toBeVisible({ timeout: 1000 });
+  }).toPass();
   await input.fill("secrets");
   await page.keyboard.press("Enter");
   await expect(page).toHaveURL(/\/ui2\/secrets/);
@@ -496,7 +500,7 @@ test("login customization: branding + method discovery", async ({ page }) => {
   await page.getByRole("dialog").locator("select").selectOption("oidc");
   await page.getByRole("button", { name: "Enable", exact: true }).click();
   // select the freshly enabled method from the list, then open Tune
-  await page.getByRole("button", { name: /oidc\// }).click();
+  await page.getByRole("button", { name: /^oidc\// }).click();
   await page.getByRole("button", { name: /^Tune/ }).click();
   await page.getByRole("checkbox").check();
   await page.getByRole("button", { name: "Save tune" }).click();

@@ -428,7 +428,9 @@ function ValueCell({
         type="button"
         onClick={() => setShown((s) => !s)}
         title={shown ? "Hide value" : "Reveal value"}
-        className="mt-0.5 shrink-0 rounded p-0.5 text-muted-foreground/50 hover:bg-accent hover:text-foreground"
+        aria-label={shown ? "Hide value" : "Reveal value"}
+        aria-pressed={shown}
+        className="-my-1 inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground/50 transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
       >
         {shown ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
       </button>

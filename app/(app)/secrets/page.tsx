@@ -19,10 +19,11 @@ import { Disclosure } from "@/components/ui/disclosure";
 import { Skeleton } from "@/components/ui/skeleton";
 import { resolveEnvs, useAccessRoles } from "@/lib/access-roles";
 import { useCan } from "@/lib/acl";
-import { useProjectCredentials } from "@/lib/project-credentials";
+import { credWarning, useProjectCredentials } from "@/lib/project-credentials";
 import { useProjects, useDeleteProject, useSeedProjectInEnv, type ProjectInfo, type KvMount } from "@/lib/projects";
 import { useDisableSecretEngine, useMounts } from "@/lib/kv";
 import { labelKey, useClearLabel, useLabels } from "@/lib/labels";
+import { secretsHref } from "@/lib/secrets-href";
 
 const SUPPORTED = new Set([
   "kv", "generic", "transit", "pki", "ssh", "database", "cubbyhole", "identity", "system",
@@ -31,7 +32,7 @@ const SUPPORTED = new Set([
 function destinationFor(type: string, name: string) {
   if (type === "identity") return "/access/identity";
   if (type === "system") return "/operations";
-  return `/secrets/${name}`;
+  return secretsHref(name);
 }
 
 function engineMeta(type: string) {
@@ -228,7 +229,10 @@ export default function SecretsPage() {
               a collapsed section is a poor home for first-run setup. */}
           <EnvironmentRail
             envs={kvEnvs}
-            canManage={can("sys/mounts")}
+            canManage={
+              can("sys/mounts/_ui_probe", ["create", "update", "sudo"]) ||
+              can("sys/mounts", ["create", "update", "sudo"])
+            }
             onCreate={() => setCreatingEnv(true)}
             onEdit={setEditingEnv}
             onDelete={(path) => {
@@ -305,10 +309,10 @@ export default function SecretsPage() {
       {creatingEnv ? <NewEnvironmentDialog onClose={() => setCreatingEnv(false)} /> : null}
       {creatingProject ? <NewProjectDialog onClose={() => setCreatingProject(false)} /> : null}
       {issuing ? (
-        <IssueCredentialDialog existing={projectCreds.data ?? []} initialProject={issuing} onClose={() => setIssuing(null)} />
+        <IssueCredentialDialog initialProject={issuing} onClose={() => setIssuing(null)} />
       ) : null}
       {granting ? (
-        <GrantAccessDialog existing={accessRoles.data ?? []} initialProject={granting} onClose={() => setGranting(null)} />
+        <GrantAccessDialog initialProject={granting} onClose={() => setGranting(null)} />
       ) : null}
 
       <ConfirmDialog
@@ -344,6 +348,7 @@ export default function SecretsPage() {
             : "no environments"
         }, then unregisters the project.`}
         confirmText={deletingProject?.project}
+        warning={credWarning(projectCreds.data, deletingProject?.project)}
         confirmLabel="Delete project"
         pending={deleteProject.isPending}
         error={deleteProjectError}

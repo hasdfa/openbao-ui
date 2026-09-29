@@ -28,7 +28,7 @@ export default function PluginsPage() {
   const plugins = usePlugins();
 
   return (
-    <div className="mx-auto max-w-3xl p-8">
+    <div className="max-w-3xl px-4 py-6 md:px-8">
       <p className="mb-4 text-sm text-muted-foreground">
         Plugins registered in this instance&apos;s catalog.
       </p>

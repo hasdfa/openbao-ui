@@ -7,7 +7,7 @@ import { CopyButton } from "@/components/copy-button";
 import { EnvScopePicker, Segmented } from "@/components/env-selector";
 import { PathPicker } from "@/components/path-picker";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogHeader } from "@/components/ui/dialog";
+import { Dialog, DialogHeader, DialogCancel } from "@/components/ui/dialog";
 import { Disclosure } from "@/components/ui/disclosure";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -29,12 +29,10 @@ const LEVELS: AccessLevel[] = ["viewer", "editor"];
  * once with a ready-to-paste login snippet.
  */
 export function IssueCredentialDialog({
-  existing,
   initialProject,
   initialPaths,
   onClose,
 }: {
-  existing: ProjectCredential[];
   initialProject?: string;
   initialPaths?: string[];
   onClose: () => void;
@@ -79,7 +77,7 @@ export function IssueCredentialDialog({
       return;
     }
     try {
-      const res = await issue.mutateAsync({ project: cleanProject, env, level, mount, ttl, paths, existing });
+      const res = await issue.mutateAsync({ project: cleanProject, env, level, mount, ttl, paths });
       setIssued(res.issued);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to issue credential");
@@ -183,7 +181,7 @@ export function IssueCredentialDialog({
 
         {error || previewError ? <p className="text-sm text-destructive">{error || previewError}</p> : null}
         <div className="flex justify-end gap-2 border-t pt-4">
-          <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+          <DialogCancel onClose={onClose} />
           <Button type="submit" disabled={issue.isPending || !!previewError}>
             {issue.isPending ? "Issuing…" : "Issue credential"}
           </Button>

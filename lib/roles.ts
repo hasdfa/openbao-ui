@@ -19,7 +19,11 @@ export function useRoleTemplates() {
         `${API_BASE}/role-templates?namespace=${encodeURIComponent(namespace)}`,
         { headers: { "x-vault-namespace": namespace } },
       );
-      if (!res.ok) return [];
+      if (res.status === 404) return [];
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { errors?: string[] };
+        throw new BaoError(res.status, body.errors ?? [`Request failed (${res.status})`]);
+      }
       const data = (await res.json()) as { templates?: RoleTemplate[] };
       return data.templates ?? [];
     },

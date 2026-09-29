@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { baoFetch } from "@/lib/bao-client";
+import { baoFetch, BaoError } from "@/lib/bao-client";
 import { useNamespace } from "@/lib/namespace";
 
 // --- status (read-only) ---
@@ -76,8 +76,14 @@ export function useRaftConfig() {
           namespace,
         });
         return res.data?.config ?? null;
-      } catch {
-        return null; // not using raft storage
+      } catch (err) {
+        if (
+          err instanceof BaoError &&
+          (err.status === 404 || /not using raft/i.test(err.errors.join(" ")))
+        ) {
+          return null; // not using raft storage
+        }
+        throw err;
       }
     },
   });
@@ -168,8 +174,9 @@ export function useRateLimitQuotas() {
           list: true,
         });
         return res.data?.keys ?? [];
-      } catch {
-        return [] as string[];
+      } catch (err) {
+        if (err instanceof BaoError && err.status === 404) return [] as string[];
+        throw err;
       }
     },
   });

@@ -52,20 +52,36 @@ export function credNames(project: string, env: string, level: AccessLevel) {
 /** A stable per-environment identity for naming (folders layout disambiguated). */
 export const envIdent = (e: EnvTarget) => (e.envPath ? `${e.mount}-${e.envPath}` : e.mount);
 
+/** Delete-dialog warning: deleting a project also revokes what it issued. */
+export function credWarning(creds: ProjectCredential[] | undefined, project: string | undefined) {
+  const n = (creds ?? []).filter((c) => c.project === project).length;
+  if (!n) return undefined;
+  return `Also revokes ${n} issued credential${n === 1 ? "" : "s"} for this project. Services using ${
+    n === 1 ? "it" : "them"
+  } stop authenticating immediately.`;
+}
+
 // --- store ---
+
+// Throws rather than returning [] on failure: the store is saved as a whole
+// list, so an empty stand-in for "couldn't load" would be written back and wipe it.
+async function fetchProjectCredentials(namespace: string): Promise<ProjectCredential[]> {
+  const res = await fetch(`${API_BASE}/project-credentials`, {
+    headers: { "x-vault-namespace": namespace },
+  });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { errors?: string[] };
+    throw new Error(data.errors?.[0] ?? `Could not load project credentials (${res.status})`);
+  }
+  const data = (await res.json()) as { creds?: ProjectCredential[] };
+  return data.creds ?? [];
+}
 
 export function useProjectCredentials() {
   const { namespace } = useNamespace();
   return useQuery({
     queryKey: ["project-credentials", namespace],
-    queryFn: async (): Promise<ProjectCredential[]> => {
-      const res = await fetch(`${API_BASE}/project-credentials`, {
-        headers: { "x-vault-namespace": namespace },
-      });
-      if (!res.ok) return [];
-      const data = (await res.json()) as { creds?: ProjectCredential[] };
-      return data.creds ?? [];
-    },
+    queryFn: () => fetchProjectCredentials(namespace),
   });
 }
 
@@ -135,11 +151,12 @@ export function useIssueProjectCredential() {
       mount?: string;
       ttl?: string;
       paths?: string[];
-      existing: ProjectCredential[];
     }): Promise<{ definition: ProjectCredential; issued: IssuedCred[] }> => {
       const project = safeBaoName(vars.project);
       if (!project) throw new Error("Project name contains unsupported characters");
-      if (vars.existing.some((c) => sameCred(c, project, vars.env))) {
+      // Read the store fresh: a stale or failed cache would be written back whole.
+      const existing = await fetchProjectCredentials(namespace);
+      if (existing.some((c) => sameCred(c, project, vars.env))) {
         throw new Error("This credential already exists. Rotate it, or revoke it before issuing a replacement.");
       }
       const mount = safeAuthMount(vars.mount || "approle");
@@ -155,7 +172,7 @@ export function useIssueProjectCredential() {
       }));
       await ensureApprole(mount, namespace);
       for (const names of planned) await assertCredentialNamesAvailable(names, mount, namespace);
-      await save(vars.existing);
+      await save(existing);
 
       const issued: IssuedCred[] = [];
       const roles: ProjectCredential["roles"] = [];
@@ -197,7 +214,7 @@ export function useIssueProjectCredential() {
         createdAt: Date.now(),
       };
       try {
-        await save([...vars.existing, definition]);
+        await save([...existing, definition]);
       } catch (err) {
         await deleteCredentialResources(definition, namespace);
         throw err;
@@ -211,18 +228,24 @@ export function useIssueProjectCredential() {
   });
 }
 
-/** Generate a fresh secret_id for one role (rotation); the old one keeps working
- *  until it expires/is removed unless you also revoke prior secret-ids. */
+/** Generate a fresh secret_id and destroy every older accessor for one role. */
 export function useRotateSecretId() {
   const { namespace } = useNamespace();
   return useMutation({
     mutationFn: async (vars: { mount: string; role: string }): Promise<string> => {
-      const res = await baoFetch<{ data: { secret_id: string } }>({
-        path: `auth/${stripSlash(vars.mount)}/role/${vars.role}/secret-id`,
+      const path = `auth/${stripSlash(vars.mount)}/role/${vars.role}`;
+      const res = await baoFetch<{ data: { secret_id: string; secret_id_accessor: string } }>({
+        path: `${path}/secret-id`,
         method: "POST",
         namespace,
         body: {},
       });
+      const listed = await baoFetch<{ data: { secret_id_accessors?: string[] } }>({ path: `${path}/secret-id`, namespace, list: true });
+      for (const accessor of listed.data?.secret_id_accessors ?? []) {
+        if (accessor !== res.data.secret_id_accessor) {
+          await baoFetch({ path: `${path}/secret-id-accessor/destroy`, method: "POST", namespace, body: { secret_id_accessor: accessor } });
+        }
+      }
       return res.data.secret_id;
     },
   });
@@ -252,9 +275,10 @@ export function useRevokeProjectCredential() {
   const save = useSaveProjectCredentials();
   return useMutation({
     meta: { success: "Project credential revoked", silentError: true },
-    mutationFn: async (vars: { cred: ProjectCredential; existing: ProjectCredential[] }) => {
+    mutationFn: async (vars: { cred: ProjectCredential }) => {
       await deleteCredentialResources(vars.cred, namespace);
-      await save(vars.existing.filter((c) => !sameCred(c, vars.cred.project, vars.cred.env)));
+      const existing = await fetchProjectCredentials(namespace);
+      await save(existing.filter((c) => !sameCred(c, vars.cred.project, vars.cred.env)));
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["project-credentials", namespace] });

@@ -27,7 +27,7 @@ export default function ProjectCredentialsPage() {
   const list = creds.data ?? [];
 
   return (
-    <div className="mx-auto max-w-4xl p-6">
+    <div className="max-w-4xl px-4 py-6 md:px-8">
       <p className="mb-5 text-sm text-muted-foreground">
         Project credentials are <strong>AppRole</strong> machine identities — a service logs in
         with a <code>role_id</code> + <code>secret_id</code> to get a short-lived, scoped
@@ -72,7 +72,7 @@ export default function ProjectCredentialsPage() {
       )}
 
       {issuing ? (
-        <IssueCredentialDialog existing={list} onClose={() => setIssuing(false)} />
+        <IssueCredentialDialog onClose={() => setIssuing(false)} />
       ) : null}
       {rotating ? <RotateDialog cred={rotating} onClose={() => setRotating(null)} /> : null}
 
@@ -82,7 +82,7 @@ export default function ProjectCredentialsPage() {
         onConfirm={async () => {
           if (!revoking) return;
           try {
-            await revoke.mutateAsync({ cred: revoking, existing: list });
+            await revoke.mutateAsync({ cred: revoking });
             setRevoking(null);
           } catch {
             // Keep the dialog and definition available for retry; show the error below.
@@ -126,7 +126,7 @@ function RotateDialog({ cred, onClose }: { cred: ProjectCredential; onClose: () 
     <Dialog open onClose={onClose} className="max-w-xl">
       <DialogHeader
         title={`Rotate secret_id — ${cred.project}`}
-        description="A fresh secret_id per environment, shown once. Update your services, then the old one can be removed."
+        description="A fresh secret_id per environment, shown once. The old secret_id stops working immediately."
         onClose={onClose}
       />
       {error ? (

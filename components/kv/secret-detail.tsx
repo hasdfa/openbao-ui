@@ -22,7 +22,10 @@ import {
   useKvWrite,
 } from "@/lib/kv";
 import { useNamespace } from "@/lib/namespace";
+import { allows, type Cap, usePathCaps } from "@/lib/acl";
 import { cn } from "@/lib/utils";
+import { useUnsaved } from "@/lib/unsaved";
+import { KvSettings } from "@/components/kv/kv-settings";
 
 const errMsg = (e: unknown) =>
   e instanceof BaoError ? e.errors.join(", ") : "Something went wrong";
@@ -57,6 +60,8 @@ export function SecretDetail({
   } | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const editorRef = React.useRef<EditorHandle>(null);
+  const [changed, setChanged] = React.useState(false);
+  useUnsaved(editing && changed);
 
   // reset transient state when switching secrets or namespaces
   React.useEffect(() => {
@@ -75,6 +80,18 @@ export function SecretDetail({
   const undelete = useKvVersionAction(mount, secretPath, "undelete");
   const destroy = useKvVersionAction(mount, secretPath, "destroy");
   const deleteAll = useKvDeleteMetadata(mount, secretPath);
+
+  // Offer only what the token may do on this exact path (OpenBao decides);
+  // denied actions are hidden, not disabled, per "don't offer what fails".
+  const capPath = (op: string) => (isV2 ? `${mount}/${op}/${secretPath}` : `${mount}/${secretPath}`);
+  const caps = usePathCaps([capPath("data"), capPath("metadata"), capPath("delete"), capPath("undelete"), capPath("destroy")]);
+  const may = (op: string, need: readonly Cap[]) => !caps.data || allows(caps.data[capPath(op)], need);
+  const canEdit = may("data", ["create", "update"]);
+  const canSoftDelete = may("delete", ["update"]);
+  const canUndelete = may("undelete", ["update"]);
+  const canDestroy = may("destroy", ["update"]);
+  const canDeleteAll = isV2 ? may("metadata", ["delete"]) : may("data", ["delete"]);
+  const canSettings = isV2 && may("metadata", ["create", "update"]);
 
   const [confirm, setConfirm] = React.useState<
     null | "deleteVersion" | "destroyVersion" | "deleteSecret"
@@ -148,8 +165,12 @@ export function SecretDetail({
         </div>
         <div className="flex shrink-0 items-center gap-1">
           {!editing ? actions : null}
-          {!editing && isCurrent && !isDeleted && !isDestroyed && secret.isSuccess && secret.data?.data ? (
-            <Button size="sm" variant="outline" onClick={beginEditing}>
+          {!editing && canEdit && isCurrent && !isDeleted && !isDestroyed && secret.isSuccess && secret.data?.data ? (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={beginEditing}
+            >
               <Pencil /> Edit
             </Button>
           ) : null}
@@ -168,8 +189,12 @@ export function SecretDetail({
               <span className="text-muted-foreground">
                 Viewing older version v{viewing}.
               </span>
-              {!isDestroyed ? (
-                <Button size="sm" variant="outline" onClick={restore}>
+              {!isDestroyed && canEdit ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={restore}
+                >
                   <RotateCcw /> Restore this version
                 </Button>
               ) : null}
@@ -182,6 +207,7 @@ export function SecretDetail({
               <KvKeyValueEditor
                 ref={editorRef}
                 initial={draft.data}
+                onDirtyChange={setChanged}
               />
               <div className="mt-4 flex gap-2">
                 <Button onClick={save} disabled={write.isPending}>
@@ -208,13 +234,32 @@ export function SecretDetail({
               <p className="mb-3 text-sm text-amber-600">
                 This version is soft-deleted.
               </p>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => undelete.mutate([viewing!])}
-              >
-                Undelete
-              </Button>
+              <div className="flex justify-center gap-2">
+                {canUndelete ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => undelete.mutate([viewing!])}
+                  >
+                    Undelete
+                  </Button>
+                ) : null}
+                {/* Edit is hidden on a deleted version, so this is the way forward
+                    when you'd rather replace it than bring it back. */}
+                {isCurrent && canEdit && currentVersion != null ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setError(null);
+                      setDraft({ data: {}, cas: currentVersion });
+                      setEditing(true);
+                    }}
+                  >
+                    <Pencil /> Write a new version
+                  </Button>
+                ) : null}
+              </div>
             </div>
           ) : secret.isLoading ? (
             <p className="py-6 text-center text-sm text-muted-foreground">Loading secret data…</p>
@@ -270,29 +315,44 @@ export function SecretDetail({
               </Disclosure>
               ) : null}
 
-              <Disclosure label="Advanced & danger zone" tone="danger">
+{canSettings ? (
+                <Disclosure label="Settings">
+                  <KvSettings
+                    key={`${meta.data.max_versions}:${meta.data.cas_required}:${meta.data.delete_version_after}:${JSON.stringify(meta.data.custom_metadata)}`}
+                    mount={mount}
+                    path={secretPath}
+                    meta={meta.data}
+                  />
+                </Disclosure>
+              ) : null}
+
+              {canSoftDelete || canDestroy || canDeleteAll ? (
+                            <Disclosure label="Advanced & danger zone" tone="danger">
                 <div className="flex flex-col gap-3 text-sm">
-                  {isV2 && !isDeleted && !isDestroyed ? (
+                  {isV2 && canSoftDelete && !isDeleted && !isDestroyed ? (
                     <Action
                       title={`Soft-delete v${viewing}`}
                       desc="Hide this version; it can be undeleted later."
                       onClick={() => setConfirm("deleteVersion")}
                     />
                   ) : null}
-                  {isV2 && !isDestroyed ? (
+                  {isV2 && canDestroy && !isDestroyed ? (
                     <Action
                       title={`Destroy v${viewing}`}
                       desc="Permanently remove this version's data."
                       onClick={() => setConfirm("destroyVersion")}
                     />
                   ) : null}
-                  <Action
-                    title="Delete entire secret"
-                    desc="Remove all versions and metadata for this path."
-                    onClick={() => setConfirm("deleteSecret")}
-                  />
+                  {canDeleteAll ? (
+                    <Action
+                      title="Delete entire secret"
+                      desc="Remove all versions and metadata for this path."
+                      onClick={() => setConfirm("deleteSecret")}
+                    />
+                  ) : null}
                 </div>
               </Disclosure>
+              ) : null}
             </div>
           ) : null}
         </div>

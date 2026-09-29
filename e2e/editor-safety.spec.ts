@@ -191,19 +191,19 @@ test("invalid and typed JSON remain in the raw editor", async ({ page }) => {
   await mockSecret(page, state);
   await page.goto("/ui2/secrets/secret/demo");
   await page.getByRole("button", { name: "Edit" }).click();
-  await page.getByRole("button", { name: "Raw JSON" }).click();
+  await page.getByRole("radio", { name: "JSON" }).click();
 
   const textarea = page.locator("textarea");
   const jsonAlert = page.locator("p[role='alert']");
   await textarea.fill('{"token":');
-  await page.getByRole("button", { name: "Key/value editor" }).click();
+  await page.getByRole("radio", { name: "Fields" }).click();
   // Next.js also mounts a route announcer with role="alert".
   await expect(jsonAlert).toBeVisible();
   await expect(textarea).toHaveValue('{"token":');
 
   await textarea.fill('{"nested":{"enabled":true}}');
-  await page.getByRole("button", { name: "Key/value editor" }).click();
-  await expect(jsonAlert).toContainText("only supports string values");
+  await page.getByRole("radio", { name: "Fields" }).click();
+  await expect(jsonAlert).toContainText("use YAML or JSON");
   await expect(textarea).toHaveValue('{"nested":{"enabled":true}}');
 });
 

@@ -158,14 +158,14 @@ function StatTile({
   return (
     <Link
       href={href}
-      className="group flex items-center gap-3 rounded-xl border bg-card p-4 shadow-sm transition-all duration-150 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md"
+      className="group flex items-center gap-3 rounded-xl border bg-card p-4 shadow-sm transition-[border-color,box-shadow] duration-150 ease-out hover:border-primary/30 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 active:scale-[0.99]"
     >
       <div className="flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
         {icon}
       </div>
       <div className="min-w-0 flex-1">
         {loading ? (
-          <Skeleton className="h-7 w-10" />
+          <Skeleton className="h-8 w-10" />
         ) : (
           <div className="text-2xl font-semibold tabular-nums tracking-tight">
             {denied ? "—" : value}
@@ -173,7 +173,7 @@ function StatTile({
         )}
         <div className="text-xs text-muted-foreground">{label}</div>
       </div>
-      <ChevronRight className="size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+      <ChevronRight className="size-4 text-muted-foreground transition-transform duration-150 ease-out [@media(hover:hover)]:group-hover:translate-x-0.5" />
     </Link>
   );
 }

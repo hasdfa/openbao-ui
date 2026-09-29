@@ -88,7 +88,7 @@ export function PathPicker({
           {value.map((p) => (
             <span key={p} className="flex items-center gap-1 rounded-md border bg-muted/40 py-0.5 pl-2 pr-1 font-mono text-xs">
               {p}
-              <button type="button" onClick={() => toggle(p)} title="Remove" className="rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground">
+              <button type="button" onClick={() => toggle(p)} title="Remove" aria-label={`Remove ${p}`} className="-my-1 inline-flex size-6 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60">
                 <X className="size-3" />
               </button>
             </span>

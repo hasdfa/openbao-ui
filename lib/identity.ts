@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { baoFetch } from "@/lib/bao-client";
+import { baoFetch, BaoError } from "@/lib/bao-client";
 import { useNamespace } from "@/lib/namespace";
 
 export type IdentityRef = { id: string; name: string };
@@ -31,8 +31,9 @@ export function useEntities() {
       try {
         const res = await baoFetch<ListWithInfo>({ path: "identity/entity/id", namespace, list: true });
         return toRefs(res);
-      } catch {
-        return [] as IdentityRef[];
+      } catch (err) {
+        if (err instanceof BaoError && err.status === 404) return [] as IdentityRef[];
+        throw err;
       }
     },
   });
@@ -100,8 +101,9 @@ export function useGroups() {
       try {
         const res = await baoFetch<ListWithInfo>({ path: "identity/group/id", namespace, list: true });
         return toRefs(res);
-      } catch {
-        return [] as IdentityRef[];
+      } catch (err) {
+        if (err instanceof BaoError && err.status === 404) return [] as IdentityRef[];
+        throw err;
       }
     },
   });
@@ -172,8 +174,9 @@ export function useGroupsDetailed() {
           list: true,
         });
         ids = res.data?.keys ?? [];
-      } catch {
-        return [];
+      } catch (err) {
+        if (err instanceof BaoError && err.status === 404) return [];
+        throw err;
       }
       const groups = await Promise.all(
         ids.slice(0, 200).map(async (id) => {
@@ -183,8 +186,9 @@ export function useGroupsDetailed() {
               namespace,
             });
             return r.data;
-          } catch {
-            return null;
+          } catch (err) {
+            if (err instanceof BaoError && err.status === 404) return null;
+            throw err;
           }
         }),
       );
@@ -193,22 +197,35 @@ export function useGroupsDetailed() {
   });
 }
 
-/** Replace a group's member entity list (how the Team view (un)assigns roles). */
+/** Add or remove one entity from a group (how the Team view (un)assigns roles). */
 export function useSetGroupMembers() {
   const qc = useQueryClient();
   const { namespace } = useNamespace();
   return useMutation({
     meta: { success: "Role updated", silentError: true },
-    mutationFn: async (vars: { id: string; member_entity_ids: string[] }) =>
-      baoFetch({
+    mutationFn: async (vars: { id: string; entityId: string; assign: boolean }) => {
+      // OpenBao replaces the whole member list, so build it from a fresh read:
+      // a cached list would drop members someone else added meanwhile.
+      const group = await baoFetch<{ data: { member_entity_ids: string[] | null } }>({
+        path: `identity/group/id/${vars.id}`,
+        namespace,
+      });
+      const current = group.data.member_entity_ids ?? [];
+      const next = vars.assign
+        ? [...new Set([...current, vars.entityId])]
+        : current.filter((m) => m !== vars.entityId);
+      return baoFetch({
         path: `identity/group/id/${vars.id}`,
         method: "POST",
         namespace,
-        body: { member_entity_ids: vars.member_entity_ids },
-      }),
-    onSuccess: () => {
+        body: { member_entity_ids: next },
+      });
+    },
+    onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: ["groups-detailed", namespace] });
       qc.invalidateQueries({ queryKey: ["groups", namespace] });
+      // the member view unions the entity's own group_ids; refresh it too
+      qc.invalidateQueries({ queryKey: ["entity", namespace, vars.entityId] });
     },
   });
 }

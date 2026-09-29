@@ -3,13 +3,16 @@
 import { Database, Plus, Trash2 } from "lucide-react";
 import * as React from "react";
 
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { CopyButton } from "@/components/copy-button";
+import { QueryError } from "@/components/query-error";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogHeader } from "@/components/ui/dialog";
+import { Dialog, DialogHeader, DialogCancel } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { BaoError } from "@/lib/bao-client";
+import { BaoError, baoFetch } from "@/lib/bao-client";
+import { useRevokeLease } from "@/lib/access";
 import {
   DbCreds,
   useCreateDbConnection,
@@ -19,6 +22,7 @@ import {
   useDeleteDbRole,
   useGenerateDbCreds,
 } from "@/lib/database";
+import { useNamespace } from "@/lib/namespace";
 
 const errMsg = (e: unknown) =>
   e instanceof BaoError ? e.errors.join(", ") : "Something went wrong";
@@ -59,6 +63,7 @@ export function DatabaseDashboard({ mount }: { mount: string }) {
 function Connections({ mount }: { mount: string }) {
   const conns = useDbConnections(mount);
   const create = useCreateDbConnection(mount);
+  const { namespace } = useNamespace();
   const [open, setOpen] = React.useState(false);
   const [f, setF] = React.useState({ name: "", plugin_name: "postgresql-database-plugin", connection_url: "", username: "", password: "" });
   const [error, setError] = React.useState<string | null>(null);
@@ -80,7 +85,7 @@ function Connections({ mount }: { mount: string }) {
             <span className="font-mono">{c}</span>
           </li>
         ))}
-        {conns.data?.length === 0 ? (
+        {conns.isError ? <li className="p-3"><QueryError error={conns.error} what="database connections" /></li> : conns.data?.length === 0 ? (
           <li className="px-3 py-6 text-center text-sm text-muted-foreground">No connections yet.</li>
         ) : null}
       </ul>
@@ -95,6 +100,12 @@ function Connections({ mount }: { mount: string }) {
               setError(null);
               if (!f.name.trim()) return setError("Name is required");
               try {
+                try {
+                  await baoFetch({ path: `${mount.replace(/\/$/, "")}/config/${f.name.trim()}`, namespace });
+                  return setError(`A connection named ${f.name.trim()} already exists`);
+                } catch (err) {
+                  if (!(err instanceof BaoError && err.status === 404)) throw err;
+                }
                 await create.mutateAsync({
                   name: f.name.trim(),
                   plugin_name: f.plugin_name,
@@ -117,7 +128,7 @@ function Connections({ mount }: { mount: string }) {
             </div>
             {error ? <p className="text-sm text-destructive">{error}</p> : null}
             <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+              <DialogCancel onClose={() => setOpen(false)} />
               <Button type="submit" disabled={create.isPending}>Save</Button>
             </div>
           </form>
@@ -132,10 +143,13 @@ function Roles({ mount }: { mount: string }) {
   const create = useCreateDbRole(mount);
   const del = useDeleteDbRole(mount);
   const creds = useGenerateDbCreds(mount);
+  const revoke = useRevokeLease();
   const [open, setOpen] = React.useState(false);
   const [f, setF] = React.useState({ name: "", db_name: "", creation_statements: "", default_ttl: "1h" });
   const [error, setError] = React.useState<string | null>(null);
   const [result, setResult] = React.useState<{ role: string; creds: DbCreds } | null>(null);
+  const [revoking, setRevoking] = React.useState(false);
+  const [removing, setRemoving] = React.useState<string | null>(null);
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setF((s) => ({ ...s, [k]: e.target.value }));
 
@@ -165,11 +179,11 @@ function Roles({ mount }: { mount: string }) {
               >
                 Generate credentials
               </Button>
-              <Button variant="ghost" size="icon" title="Delete" onClick={() => del.mutate(r)}><Trash2 /></Button>
+              <Button variant="ghost" size="icon" title="Delete" onClick={() => setRemoving(r)}><Trash2 /></Button>
             </div>
           </li>
         ))}
-        {roles.data?.length === 0 ? (
+        {roles.isError ? <li className="p-3"><QueryError error={roles.error} what="database roles" /></li> : roles.data?.length === 0 ? (
           <li className="px-3 py-6 text-center text-sm text-muted-foreground">No roles yet.</li>
         ) : null}
       </ul>
@@ -179,8 +193,32 @@ function Roles({ mount }: { mount: string }) {
           <div className="mb-2 text-sm font-medium">Dynamic credentials for {result.role}</div>
           <CredRow label="username" value={result.creds.username} />
           <CredRow label="password" value={result.creds.password} />
+          <CredRow label="lease id" value={result.creds.lease_id} />
+          <div className="flex items-center gap-2 py-1 text-xs">
+            <span className="w-20 text-muted-foreground">TTL</span>
+            <span>{result.creds.lease_duration}s{result.creds.renewable ? " (renewable)" : ""}</span>
+          </div>
+          <Button variant="destructive" size="sm" className="mt-2" onClick={() => setRevoking(true)}>
+            Revoke now
+          </Button>
         </div>
       ) : null}
+
+      <ConfirmDialog
+        open={revoking}
+        onClose={() => setRevoking(false)}
+        onConfirm={async () => {
+          if (!result) return;
+          await revoke.mutateAsync({ lease_id: result.creds.lease_id });
+          setRevoking(false);
+          setResult(null);
+        }}
+        title="Revoke these credentials?"
+        description="Anything using them loses access immediately."
+        confirmLabel="Revoke"
+        pending={revoke.isPending}
+        error={revoke.error instanceof Error ? revoke.error.message : null}
+      />
 
       {open ? (
         <Dialog open onClose={() => setOpen(false)} className="max-w-lg">
@@ -217,12 +255,21 @@ function Roles({ mount }: { mount: string }) {
             <Field label="Default TTL"><Input value={f.default_ttl} onChange={set("default_ttl")} /></Field>
             {error ? <p className="text-sm text-destructive">{error}</p> : null}
             <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+              <DialogCancel onClose={() => setOpen(false)} />
               <Button type="submit" disabled={create.isPending}>Save</Button>
             </div>
           </form>
         </Dialog>
       ) : null}
+      <ConfirmDialog
+        open={!!removing}
+        onClose={() => setRemoving(null)}
+        onConfirm={async () => { await del.mutateAsync(removing!); setRemoving(null); }}
+        title={`Delete role "${removing}"?`}
+        confirmLabel="Delete"
+        pending={del.isPending}
+        error={del.error ? errMsg(del.error) : null}
+      />
     </div>
   );
 }

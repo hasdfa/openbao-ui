@@ -15,7 +15,7 @@ export default function AboutPage() {
   const seal = useSealStatus();
 
   return (
-    <div className="mx-auto max-w-2xl p-8">
+    <div className="max-w-2xl px-4 py-6 md:px-8">
       <div className="rounded-xl border p-8">
         <Logo variant="vertical" className="mx-auto mb-6 h-24 w-auto" />
         <dl className="mx-auto grid max-w-sm grid-cols-2 gap-y-2 text-sm">

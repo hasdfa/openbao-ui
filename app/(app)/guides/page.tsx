@@ -156,7 +156,6 @@ export default function GuidesPage() {
 
           {issuing ? (
             <IssueCredentialDialog
-              existing={projectCreds.data ?? []}
               initialProject={path.split("/")[0] || undefined}
               onClose={() => setIssuing(false)}
             />

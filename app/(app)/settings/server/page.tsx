@@ -3,6 +3,7 @@
 import * as React from "react";
 
 import { Button } from "@/components/ui/button";
+import { QueryError } from "@/components/query-error";
 import { Disclosure } from "@/components/ui/disclosure";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -37,13 +38,13 @@ export default function ServerPage() {
   const listeners = (c.listeners as { config?: { address?: string } }[] | undefined) ?? [];
 
   return (
-    <div className="mx-auto max-w-3xl p-8">
+    <div className="max-w-3xl px-4 py-6 md:px-8">
       <section className="rounded-xl border p-6">
         <h2 className="mb-3 text-sm font-medium">Server</h2>
         {cfg.isLoading ? (
           <p className="text-sm text-muted-foreground">Loading…</p>
         ) : cfg.isError ? (
-          <p className="text-sm text-destructive">Could not read server config.</p>
+          <QueryError error={cfg.error} what="server configuration" />
         ) : (
           <>
             <dl className="grid grid-cols-[10rem_1fr] gap-y-2 text-sm">
@@ -106,6 +107,7 @@ function LoggingCard() {
         <Button size="sm" onClick={() => setLevel.mutate(level)} disabled={setLevel.isPending}>
           Apply
         </Button>
+        {setLevel.error ? <p role="alert" className="text-sm text-destructive">{errMsg(setLevel.error)}</p> : null}
         <Button size="sm" variant="outline" onClick={() => reset.mutate()} disabled={reset.isPending}>
           Reset
         </Button>

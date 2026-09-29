@@ -4,7 +4,9 @@ import { ChevronRight, FileClock, Folder, Home } from "lucide-react";
 import * as React from "react";
 
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { QueryError } from "@/components/query-error";
 import { Button } from "@/components/ui/button";
+import { DetailPane, ListDetail, ListPane } from "@/components/list-detail";
 import {
   LeaseDetail,
   useLeaseList,
@@ -24,6 +26,7 @@ export default function LeasesPage() {
   const revoke = useRevokeLease();
   const [detail, setDetail] = React.useState<LeaseDetail | null>(null);
   const [confirmPrefix, setConfirmPrefix] = React.useState(false);
+  const [confirmLease, setConfirmLease] = React.useState(false);
 
   const keys = list.data ?? [];
   const folders = keys.filter((k) => k.endsWith("/"));
@@ -39,11 +42,17 @@ export default function LeasesPage() {
   }
 
   return (
-    <div className="flex h-full">
-      <div className="w-80 shrink-0 overflow-auto border-r">
+    <ListDetail className="h-full" open={!!detail} onBack={() => setDetail(null)} backLabel="All leases">
+      <ListPane className="overflow-auto md:w-80">
         {/* breadcrumb */}
         <div className="flex flex-wrap items-center gap-1 border-b px-4 py-3 text-sm">
-          <button onClick={() => setPrefix("")} title="root">
+          <button
+            type="button"
+            onClick={() => setPrefix("")}
+            title="Lease root"
+            aria-label="Lease root"
+            className="-m-1 inline-flex size-7 items-center justify-center rounded-md transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+          >
             <Home className="size-4 text-muted-foreground" />
           </button>
           {segments.map((s, i) => (
@@ -69,6 +78,8 @@ export default function LeasesPage() {
 
         {list.isLoading ? (
           <p className="p-4 text-sm text-muted-foreground">Loading…</p>
+        ) : list.isError ? (
+          <QueryError error={list.error} what="leases under this prefix" className="m-3" />
         ) : keys.length === 0 ? (
           <p className="p-4 text-sm text-muted-foreground">
             No leases under this prefix.
@@ -104,10 +115,10 @@ export default function LeasesPage() {
             })}
           </ul>
         )}
-      </div>
+      </ListPane>
 
       {/* detail */}
-      <div className="min-w-0 flex-1 p-6">
+      <DetailPane className="overflow-auto p-4 md:p-6">
         {!detail ? (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
             Browse a lease prefix and select a lease.
@@ -139,17 +150,30 @@ export default function LeasesPage() {
               <Button
                 variant="destructive"
                 disabled={revoke.isPending}
-                onClick={async () => {
-                  await revoke.mutateAsync({ lease_id: detail.id });
-                  setDetail(null);
-                }}
+                onClick={() => setConfirmLease(true)}
               >
                 Revoke
               </Button>
             </div>
           </div>
         )}
-      </div>
+      </DetailPane>
+
+      <ConfirmDialog
+        open={confirmLease}
+        onClose={() => setConfirmLease(false)}
+        onConfirm={async () => {
+          await revoke.mutateAsync({ lease_id: detail!.id });
+          setConfirmLease(false);
+          setDetail(null);
+        }}
+        title="Revoke lease?"
+        description={`Revokes "${detail?.id}" and invalidates its live credentials. This cannot be undone.`}
+        confirmText={detail?.id.split("/").filter(Boolean).at(-1)}
+        confirmLabel="Revoke"
+        pending={revoke.isPending}
+        error={revoke.error instanceof Error ? revoke.error.message : null}
+      />
 
       <ConfirmDialog
         open={confirmPrefix}
@@ -161,10 +185,11 @@ export default function LeasesPage() {
         }}
         title={`Revoke all leases under "${prefix}"?`}
         description="Revokes every lease beneath this prefix. This cannot be undone."
-        confirmText="revoke"
+        confirmText={prefix}
         confirmLabel="Revoke prefix"
         pending={revoke.isPending}
+        error={revoke.error instanceof Error ? revoke.error.message : null}
       />
-    </div>
+    </ListDetail>
   );
 }

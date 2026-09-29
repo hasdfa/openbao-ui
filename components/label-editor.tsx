@@ -3,7 +3,7 @@
 import * as React from "react";
 
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogHeader } from "@/components/ui/dialog";
+import { Dialog, DialogCancel, DialogHeader } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label as FieldLabel } from "@/components/ui/label";
 import { useSetLabel, type Label, type LabelScope } from "@/lib/labels";
@@ -222,9 +222,7 @@ export function LabelEditor({
         </div>
 
         <div className="flex justify-end gap-2 border-t pt-4">
-          <Button type="button" variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
+          <DialogCancel onClose={onClose} />
           <Button type="submit" disabled={set.isPending}>
             Save
           </Button>

@@ -113,24 +113,26 @@ export const openbao = {
     request<TokenLookup>("auth/token/lookup-self", { token }),
 
   /** Username/password login -> returns a client token in `auth`. */
-  userpassLogin: (mount: string, username: string, password: string) =>
+  userpassLogin: (mount: string, username: string, password: string, namespace?: string) =>
     request<AuthResponse>(`auth/${mount}/login/${encodeURIComponent(username)}`, {
       method: "POST",
       body: { password },
+      namespace,
     }),
 
   /** LDAP login. */
-  ldapLogin: (mount: string, username: string, password: string) =>
+  ldapLogin: (mount: string, username: string, password: string, namespace?: string) =>
     request<AuthResponse>(
       `auth/${mount}/login/${encodeURIComponent(username)}`,
-      { method: "POST", body: { password } },
+      { method: "POST", body: { password }, namespace },
     ),
 
   /** AppRole login (role_id + secret_id). */
-  approleLogin: (mount: string, roleId: string, secretId: string) =>
+  approleLogin: (mount: string, roleId: string, secretId: string, namespace?: string) =>
     request<AuthResponse>(`auth/${mount}/login`, {
       method: "POST",
       body: { role_id: roleId, secret_id: secretId },
+      namespace,
     }),
 
   /** OIDC: get the provider authorization URL to redirect the user to. */

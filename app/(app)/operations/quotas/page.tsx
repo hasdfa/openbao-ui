@@ -4,11 +4,13 @@ import { Gauge, Plus, Trash2 } from "lucide-react";
 import * as React from "react";
 
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { QueryError } from "@/components/query-error";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogHeader } from "@/components/ui/dialog";
+import { Dialog, DialogHeader, DialogCancel } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { BaoError } from "@/lib/bao-client";
+import { BaoError, baoFetch } from "@/lib/bao-client";
+import { useNamespace } from "@/lib/namespace";
 import {
   useCreateRateLimitQuota,
   useDeleteRateLimitQuota,
@@ -22,6 +24,7 @@ export default function QuotasPage() {
   const quotas = useRateLimitQuotas();
   const create = useCreateRateLimitQuota();
   const del = useDeleteRateLimitQuota();
+  const { namespace } = useNamespace();
   const [open, setOpen] = React.useState(false);
   const [removing, setRemoving] = React.useState<string | null>(null);
   const [name, setName] = React.useState("");
@@ -31,7 +34,7 @@ export default function QuotasPage() {
   const [error, setError] = React.useState<string | null>(null);
 
   return (
-    <div className="mx-auto max-w-3xl p-8">
+    <div className="max-w-3xl px-4 py-6 md:px-8">
       <div className="mb-3 flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
           Rate-limit quotas cap requests per interval, optionally scoped to a path.
@@ -49,7 +52,7 @@ export default function QuotasPage() {
             <Button variant="ghost" size="icon" title="Delete" onClick={() => setRemoving(q)}><Trash2 /></Button>
           </li>
         ))}
-        {quotas.data?.length === 0 ? (
+        {quotas.isError ? <li className="p-3"><QueryError error={quotas.error} what="rate-limit quotas" /></li> : quotas.data?.length === 0 ? (
           <li className="px-3 py-6 text-center text-sm text-muted-foreground">No rate-limit quotas.</li>
         ) : null}
       </ul>
@@ -64,6 +67,12 @@ export default function QuotasPage() {
               setError(null);
               if (!name.trim()) return setError("Name is required");
               try {
+                try {
+                  await baoFetch({ path: `sys/quotas/rate-limit/${name.trim()}`, namespace });
+                  return setError(`A quota named ${name.trim()} already exists`);
+                } catch (err) {
+                  if (!(err instanceof BaoError && err.status === 404)) throw err;
+                }
                 await create.mutateAsync({
                   name: name.trim(),
                   rate: Number(rate) || 0,
@@ -97,7 +106,7 @@ export default function QuotasPage() {
             </div>
             {error ? <p className="text-sm text-destructive">{error}</p> : null}
             <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+              <DialogCancel onClose={() => setOpen(false)} />
               <Button type="submit" disabled={create.isPending}>Create</Button>
             </div>
           </form>
@@ -114,6 +123,7 @@ export default function QuotasPage() {
         title={`Delete quota "${removing}"?`}
         confirmLabel="Delete"
         pending={del.isPending}
+        error={del.error ? errMsg(del.error) : null}
       />
     </div>
   );

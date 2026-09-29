@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { baoFetch } from "@/lib/bao-client";
+import { baoFetch, BaoError } from "@/lib/bao-client";
 import { useNamespace } from "@/lib/namespace";
 
 // ---------------------------------------------------------------------------
@@ -114,6 +114,9 @@ export type TokenInfo = {
   path?: string;
 };
 
+/** Accessors looked up per page load; `total` says how many exist, so a cap is never silent. */
+export const TOKEN_LOOKUP_LIMIT = 200;
+
 /** List token accessors and look each up (capped) so we can show a table. */
 export function useTokens() {
   const { namespace } = useNamespace();
@@ -125,7 +128,8 @@ export function useTokens() {
         namespace,
         list: true,
       });
-      const accessors = (list.data?.keys ?? []).slice(0, 200);
+      const all = list.data?.keys ?? [];
+      const accessors = all.slice(0, TOKEN_LOOKUP_LIMIT);
       const infos = await Promise.all(
         accessors.map(async (accessor) => {
           try {
@@ -136,12 +140,13 @@ export function useTokens() {
               body: { accessor },
             });
             return r.data;
-          } catch {
-            return null;
+          } catch (err) {
+            if (err instanceof BaoError && err.status === 404) return null;
+            throw err;
           }
         }),
       );
-      return infos.filter((x): x is TokenInfo => !!x);
+      return { items: infos.filter((x): x is TokenInfo => !!x), total: all.length };
     },
   });
 }
@@ -158,8 +163,9 @@ export function useTokenRoles() {
           list: true,
         });
         return res.data?.keys ?? [];
-      } catch {
-        return [] as string[];
+      } catch (err) {
+        if (err instanceof BaoError && err.status === 404) return [] as string[];
+        throw err;
       }
     },
   });
@@ -229,8 +235,9 @@ export function useLeaseList(prefix: string) {
           list: true,
         });
         return res.data?.keys ?? [];
-      } catch {
-        return [] as string[];
+      } catch (err) {
+        if (err instanceof BaoError && err.status === 404) return [] as string[];
+        throw err;
       }
     },
   });

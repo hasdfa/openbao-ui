@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { baoFetch } from "@/lib/bao-client";
+import { baoFetch, BaoError } from "@/lib/bao-client";
 import { useNamespace } from "@/lib/namespace";
 
 export type AuthMount = {
@@ -80,8 +80,9 @@ export function useUserpassUsers(mount: string) {
           list: true,
         });
         return res.data?.keys ?? [];
-      } catch {
-        return [] as string[];
+      } catch (err) {
+        if (err instanceof BaoError && err.status === 404) return [] as string[];
+        throw err;
       }
     },
   });
@@ -130,8 +131,9 @@ export function useApproleRoles(mount: string) {
           list: true,
         });
         return res.data?.keys ?? [];
-      } catch {
-        return [] as string[];
+      } catch (err) {
+        if (err instanceof BaoError && err.status === 404) return [] as string[];
+        throw err;
       }
     },
   });
@@ -259,8 +261,9 @@ export function useAuthConfig(mount: string) {
           namespace,
         });
         return res.data;
-      } catch {
-        return null; // not configured yet
+      } catch (err) {
+        if (err instanceof BaoError && err.status === 404) return null; // not configured yet
+        throw err;
       }
     },
   });
@@ -290,8 +293,9 @@ export function useAuthRoles(mount: string, base: string) {
           list: true,
         });
         return res.data?.keys ?? [];
-      } catch {
-        return [] as string[];
+      } catch (err) {
+        if (err instanceof BaoError && err.status === 404) return [] as string[];
+        throw err;
       }
     },
   });
@@ -351,8 +355,9 @@ export function useLdapConfig(mount: string) {
           namespace,
         });
         return res.data;
-      } catch {
-        return null; // not configured yet
+      } catch (err) {
+        if (err instanceof BaoError && err.status === 404) return null; // not configured yet
+        throw err;
       }
     },
   });

@@ -4,13 +4,15 @@ import { Key, LogIn, Plus, Trash2 } from "lucide-react";
 import * as React from "react";
 
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { QueryError } from "@/components/query-error";
 import { CopyButton } from "@/components/copy-button";
 import { GoogleOidcWizard } from "@/components/google-oidc-wizard";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogHeader } from "@/components/ui/dialog";
+import { Dialog, DialogHeader, DialogCancel } from "@/components/ui/dialog";
 import { Disclosure } from "@/components/ui/disclosure";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { DetailPane, ListDetail, ListPane } from "@/components/list-detail";
 import { BaoError } from "@/lib/bao-client";
 import { oidcCallbackUrl, useUiConfig } from "@/lib/ui-config";
 import {
@@ -53,8 +55,8 @@ export default function AuthMethodsPage() {
     methods.data?.find((m) => m.path === selected?.path) ?? null;
 
   return (
-    <div className="flex h-full">
-      <div className="w-72 shrink-0 overflow-auto border-r p-3">
+    <ListDetail className="h-full" open={!!current} onBack={() => setSelected(null)} backLabel="All auth methods">
+      <ListPane className="overflow-auto p-3 md:w-72">
         <Button size="sm" className="mb-2 w-full" onClick={() => setEnabling(true)}>
           <Plus /> Enable method
         </Button>
@@ -69,19 +71,20 @@ export default function AuthMethodsPage() {
         {methods.isLoading ? (
           <p className="p-2 text-sm text-muted-foreground">Loading…</p>
         ) : methods.isError ? (
-          <p className="p-2 text-sm text-destructive">{errMsg(methods.error)}</p>
+          <QueryError error={methods.error} what="auth methods" className="m-2" />
         ) : (
           <ul>
             {(methods.data ?? []).map((mth) => (
               <li
                 key={mth.path}
-                className={`group flex items-center gap-2 rounded-md pr-1 hover:bg-accent ${
+                className={`group flex items-center gap-1 rounded-md pr-1 transition-colors duration-100 hover:bg-accent ${
                   current?.path === mth.path ? "bg-accent" : ""
                 }`}
               >
                 <button
                   onClick={() => setSelected(mth)}
-                  className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left text-sm"
+                  aria-current={current?.path === mth.path ? "true" : undefined}
+                  className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
                 >
                   <Key className="size-4 shrink-0 text-muted-foreground" />
                   <span className="min-w-0 flex-1">
@@ -90,10 +93,13 @@ export default function AuthMethodsPage() {
                   </span>
                 </button>
                 {mth.path !== "token/" ? (
+                  // Always visible: a destructive control must not hide until hovered.
                   <button
+                    type="button"
                     title="Disable"
+                    aria-label={`Disable ${mth.path}`}
                     onClick={() => setDisabling(mth)}
-                    className="rounded p-1 text-muted-foreground opacity-0 hover:text-destructive group-hover:opacity-100"
+                    className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground/50 transition-colors duration-150 hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 group-hover:text-muted-foreground"
                   >
                     <Trash2 className="size-4" />
                   </button>
@@ -102,17 +108,17 @@ export default function AuthMethodsPage() {
             ))}
           </ul>
         )}
-      </div>
+      </ListPane>
 
-      <div className="min-w-0 flex-1 overflow-auto p-6">
+      <DetailPane className="overflow-auto p-4 md:p-6">
         {!current ? (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
             Select an auth method, or enable a new one.
           </div>
         ) : (
-          <MethodConfig method={current} />
+          <MethodConfig key={current.path} method={current} />
         )}
-      </div>
+      </DetailPane>
 
       {enabling ? (
         <EnableDialog
@@ -149,7 +155,7 @@ export default function AuthMethodsPage() {
         confirmLabel="Disable method"
         pending={disable.isPending}
       />
-    </div>
+    </ListDetail>
   );
 }
 
@@ -330,6 +336,7 @@ function UserpassConfig({ mount }: { mount: string }) {
   const users = useUserpassUsers(mount);
   const create = useCreateUserpassUser(mount);
   const del = useDeleteUserpassUser(mount);
+  const [removing, setRemoving] = React.useState<string | null>(null);
   const [open, setOpen] = React.useState(false);
   const [username, setUsername] = React.useState("");
   const [password, setPassword] = React.useState("");
@@ -348,15 +355,30 @@ function UserpassConfig({ mount }: { mount: string }) {
         {(users.data ?? []).map((u) => (
           <li key={u} className="flex items-center justify-between px-3 py-2 text-sm">
             <span className="font-mono">{u}</span>
-            <Button variant="ghost" size="icon" title="Delete" onClick={() => del.mutate(u)}>
+            <Button variant="ghost" size="icon" title="Delete" onClick={() => { del.reset(); setRemoving(u); }}>
               <Trash2 />
             </Button>
           </li>
         ))}
-        {users.data?.length === 0 ? (
+        {users.isError ? <li className="p-3"><QueryError error={users.error} what="userpass users" /></li> : users.data?.length === 0 ? (
           <li className="px-3 py-6 text-center text-sm text-muted-foreground">No users yet.</li>
         ) : null}
       </ul>
+
+      <ConfirmDialog
+        open={!!removing}
+        onClose={() => setRemoving(null)}
+        title={`Delete user ${removing}?`}
+        description={"They can no longer sign in with this userpass mount. Existing tokens keep working until they expire."}
+        confirmLabel="Delete"
+        pending={del.isPending}
+        error={del.error ? errMsg(del.error) : null}
+        onConfirm={async () => {
+          if (!removing) return;
+          await del.mutateAsync(removing);
+          setRemoving(null);
+        }}
+      />
 
       {open ? (
         <Dialog open onClose={() => setOpen(false)}>
@@ -366,6 +388,11 @@ function UserpassConfig({ mount }: { mount: string }) {
             onSubmit={async (e) => {
               e.preventDefault();
               setError(null);
+              // Writing a user is an upsert: an existing name would get its password reset.
+              if (users.data?.includes(username.trim())) {
+                setError(`User "${username.trim()}" already exists`);
+                return;
+              }
               try {
                 await create.mutateAsync({
                   username: username.trim(),
@@ -392,7 +419,7 @@ function UserpassConfig({ mount }: { mount: string }) {
             </Field>
             {error ? <p className="text-sm text-destructive">{error}</p> : null}
             <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+              <DialogCancel onClose={() => setOpen(false)} />
               <Button type="submit" disabled={create.isPending}>Add</Button>
             </div>
           </form>
@@ -407,6 +434,7 @@ function ApproleConfig({ mount }: { mount: string }) {
   const roles = useApproleRoles(mount);
   const create = useCreateApproleRole(mount);
   const del = useDeleteApproleRole(mount);
+  const [removing, setRemoving] = React.useState<string | null>(null);
   const roleId = useApproleRoleId();
   const secretId = useGenerateSecretId();
   const [open, setOpen] = React.useState(false);
@@ -425,9 +453,9 @@ function ApproleConfig({ mount }: { mount: string }) {
       </div>
       <ul className="divide-y rounded-md border">
         {(roles.data ?? []).map((r) => (
-          <li key={r} className="flex items-center justify-between px-3 py-2 text-sm">
-            <span className="font-mono">{r}</span>
-            <div className="flex gap-1">
+          <li key={r} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 py-2 text-sm">
+            <span className="min-w-0 break-all font-mono">{r}</span>
+            <div className="flex flex-wrap gap-1">
               <Button
                 variant="outline"
                 size="sm"
@@ -448,16 +476,32 @@ function ApproleConfig({ mount }: { mount: string }) {
               >
                 Generate secret-id
               </Button>
-              <Button variant="ghost" size="icon" title="Delete" onClick={() => del.mutate(r)}>
+              <Button variant="ghost" size="icon" title="Delete" onClick={() => { del.reset(); setRemoving(r); }}>
                 <Trash2 />
               </Button>
             </div>
           </li>
         ))}
-        {roles.data?.length === 0 ? (
+        {roles.isError ? <li className="p-3"><QueryError error={roles.error} what="AppRole roles" /></li> : roles.data?.length === 0 ? (
           <li className="px-3 py-6 text-center text-sm text-muted-foreground">No roles yet.</li>
         ) : null}
       </ul>
+
+      <ConfirmDialog
+        open={!!removing}
+        onClose={() => setRemoving(null)}
+        title={`Delete AppRole ${removing}?`}
+        description={"Every role-id and secret-id issued for it stops working immediately. Services using it can no longer log in."}
+        confirmText={removing ?? undefined}
+        confirmLabel="Delete"
+        pending={del.isPending}
+        error={del.error ? errMsg(del.error) : null}
+        onConfirm={async () => {
+          if (!removing) return;
+          await del.mutateAsync(removing);
+          setRemoving(null);
+        }}
+      />
 
       {creds ? (
         <div className="mt-4 rounded-md border bg-muted/40 p-3">
@@ -503,7 +547,7 @@ function ApproleConfig({ mount }: { mount: string }) {
             </Field>
             {error ? <p className="text-sm text-destructive">{error}</p> : null}
             <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+              <DialogCancel onClose={() => setOpen(false)} />
               <Button type="submit" disabled={create.isPending}>Add</Button>
             </div>
           </form>
@@ -570,7 +614,7 @@ function EnableDialog({
         </Field>
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
         <div className="flex justify-end gap-2">
-          <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+          <DialogCancel onClose={onClose} />
           <Button type="submit" disabled={enable.isPending}>Enable</Button>
         </div>
       </form>
@@ -813,6 +857,7 @@ function RolesPanel({
   const roles = useAuthRoles(mount, spec.base);
   const create = useCreateAuthRole(mount, spec.base);
   const del = useDeleteAuthRole(mount, spec.base);
+  const [removing, setRemoving] = React.useState<string | null>(null);
   const uiConfig = useUiConfig();
   const [open, setOpen] = React.useState(false);
   const [name, setName] = React.useState("");
@@ -849,15 +894,30 @@ function RolesPanel({
         {(roles.data ?? []).map((r) => (
           <li key={r} className="flex items-center justify-between px-3 py-2 text-sm">
             <span className="font-mono">{r}</span>
-            <Button variant="ghost" size="icon" title="Delete" onClick={() => del.mutate(r)}>
+            <Button variant="ghost" size="icon" title="Delete" onClick={() => { del.reset(); setRemoving(r); }}>
               <Trash2 />
             </Button>
           </li>
         ))}
-        {roles.data?.length === 0 ? (
+        {roles.isError ? <li className="p-3"><QueryError error={roles.error} what={`${spec.label.toLowerCase()} roles`} /></li> : roles.data?.length === 0 ? (
           <li className="px-3 py-6 text-center text-sm text-muted-foreground">None yet.</li>
         ) : null}
       </ul>
+
+      <ConfirmDialog
+        open={!!removing}
+        onClose={() => setRemoving(null)}
+        title={`Delete role ${removing}?`}
+        description={"Logins that map to this role stop working."}
+        confirmLabel="Delete"
+        pending={del.isPending}
+        error={del.error ? errMsg(del.error) : null}
+        onConfirm={async () => {
+          if (!removing) return;
+          await del.mutateAsync(removing);
+          setRemoving(null);
+        }}
+      />
 
       {open ? (
         <Dialog open onClose={() => setOpen(false)} className="max-w-lg">
@@ -889,7 +949,7 @@ function RolesPanel({
             ))}
             {error ? <p className="text-sm text-destructive">{error}</p> : null}
             <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+              <DialogCancel onClose={() => setOpen(false)} />
               <Button type="submit" disabled={create.isPending}>Save</Button>
             </div>
           </form>

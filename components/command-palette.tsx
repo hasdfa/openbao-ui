@@ -14,6 +14,7 @@ import * as React from "react";
 
 import { useTheme } from "@/components/theme";
 import { useMounts } from "@/lib/kv";
+import { secretsHref } from "@/lib/secrets-href";
 
 type Command = {
   id: string;
@@ -86,7 +87,7 @@ export function CommandPalette() {
         label: `Open engine ${path}`,
         hint: "secrets",
         icon: <KeyRound />,
-        run: go(`/secrets/${name}`),
+        run: go(secretsHref(name)),
       } satisfies Command;
     });
     return [...nav, ...kvMounts];
@@ -95,6 +96,14 @@ export function CommandPalette() {
   const filtered = commands.filter((c) =>
     c.label.toLowerCase().includes(query.toLowerCase()),
   );
+
+  // Arrow keys can walk past the fold; keep the highlighted row in view.
+  const listRef = React.useRef<HTMLUListElement>(null);
+  React.useEffect(() => {
+    listRef.current
+      ?.querySelector<HTMLElement>(`[data-index="${active}"]`)
+      ?.scrollIntoView({ block: "nearest" });
+  }, [active]);
 
   function onKeyDown(e: React.KeyboardEvent) {
     if (e.key === "ArrowDown") {
@@ -113,7 +122,7 @@ export function CommandPalette() {
     <>
       <button
         onClick={() => setOpen(true)}
-        className="flex w-full items-center gap-2 rounded-lg border px-3 py-1.5 text-sm text-muted-foreground shadow-xs transition-colors hover:bg-accent hover:text-foreground"
+        className="flex w-full items-center gap-2 rounded-lg border px-3 py-1.5 text-sm text-muted-foreground shadow-xs transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
       >
         <Search className="size-4" />
         <span className="flex-1 text-left">Search…</span>
@@ -122,11 +131,15 @@ export function CommandPalette() {
 
       {open ? (
         <div
-          className="fixed inset-0 z-50 flex items-start justify-center bg-foreground/40 p-4 pt-[15vh] backdrop-blur-sm duration-150 animate-in fade-in-0"
+          className="fixed inset-0 z-50 flex items-start justify-center bg-foreground/40 p-4 pt-[15vh] backdrop-blur-sm duration-100 ease-out animate-in fade-in-0"
           onClick={() => setOpen(false)}
         >
+          {/* Summoned by ⌘K many times a day: it should just be there, not zoom in. */}
           <div
-            className="w-full max-w-xl overflow-hidden rounded-2xl border bg-card shadow-xl duration-150 animate-in fade-in-0 zoom-in-95"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Command palette"
+            className="w-full max-w-xl overflow-hidden rounded-2xl border bg-card shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center gap-2 border-b px-3">
@@ -140,10 +153,11 @@ export function CommandPalette() {
                 }}
                 onKeyDown={onKeyDown}
                 placeholder="Jump to…"
+                aria-label="Jump to"
                 className="h-11 flex-1 bg-transparent text-sm outline-none"
               />
             </div>
-            <ul className="max-h-80 overflow-auto p-2">
+            <ul ref={listRef} className="max-h-80 overflow-auto p-2">
               {filtered.length === 0 ? (
                 <li className="px-3 py-6 text-center text-sm text-muted-foreground">
                   No matches
@@ -152,9 +166,10 @@ export function CommandPalette() {
                 filtered.map((c, i) => (
                   <li key={c.id}>
                     <button
+                      data-index={i}
                       onMouseEnter={() => setActive(i)}
                       onClick={c.run}
-                      className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm transition-colors [&_svg]:size-4 ${
+                      className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm [&_svg]:size-4 ${
                         i === active
                           ? "bg-primary/10 text-primary [&_svg]:text-primary"
                           : "[&_svg]:text-muted-foreground"

@@ -39,19 +39,69 @@ export function useResultantAcl() {
   });
 }
 
-function canPath(acl: AclData | undefined, path: string): boolean {
-  if (!acl) return true; // optimistic while loading
-  if (acl.root) return true;
-  const ok = (caps?: string[]) => !!caps && caps.some((c) => c !== "deny");
-  if (ok(acl.exact[path])) return true;
-  for (const [prefix, caps] of Object.entries(acl.glob)) {
-    if (path.startsWith(prefix) && ok(caps)) return true;
+export type Cap = "create" | "read" | "update" | "patch" | "delete" | "list" | "sudo";
+
+/** The capabilities that govern `path`: an exact rule wins, else the longest glob prefix. */
+function matching(acl: AclData, path: string): string[] | null {
+  if (acl.exact[path]) return acl.exact[path];
+  let best: string | null = null;
+  for (const prefix of Object.keys(acl.glob)) {
+    if (path.startsWith(prefix) && (best === null || prefix.length > best.length)) best = prefix;
   }
-  return false;
+  return best === null ? null : acl.glob[best];
 }
 
-/** Returns a `can(path)` predicate for gating UI on token capabilities. */
+/** OpenBao semantics: deny beats everything, root allows everything. */
+export function allows(caps: string[] | null | undefined, need: readonly Cap[]): boolean {
+  if (!caps || caps.includes("deny")) return false;
+  if (caps.includes("root")) return true;
+  return need.some((c) => caps.includes(c));
+}
+
+const SEE: readonly Cap[] = ["read", "list"];
+
+function canPath(acl: AclData | undefined, path: string, need: readonly Cap[]): boolean {
+  if (!acl) return true; // optimistic while loading, so the nav doesn't flicker
+  if (acl.root) return true;
+  return allows(matching(acl, path), need);
+}
+
+/**
+ * `can(path, caps?)` for gating navigation. Defaults to "can see it" (read or
+ * list); pass the capabilities an action needs, e.g. `can("sys/mounts/x", ["create", "update"])`.
+ * Advisory only (the resultant ACL is an approximation); for actions on a
+ * concrete path prefer `usePathCaps`, which asks OpenBao directly.
+ */
 export function useCan() {
   const { data } = useResultantAcl();
-  return (path: string) => canPath(data, path);
+  return (path: string, need: readonly Cap[] = SEE) => canPath(data, path, need);
+}
+
+/**
+ * Authoritative capabilities for concrete paths (`sys/capabilities-self`).
+ * `data` is undefined while loading: callers treat that as "allowed" so buttons
+ * don't flicker, and disable only once OpenBao has said no.
+ */
+export function usePathCaps(paths: string[]) {
+  const { namespace } = useNamespace();
+  const unique = [...new Set(paths.filter(Boolean))].sort();
+  return useQuery({
+    queryKey: ["path-caps", namespace, ...unique],
+    enabled: unique.length > 0,
+    staleTime: 30_000,
+    queryFn: async (): Promise<Record<string, string[]>> => {
+      const res = await baoFetch<{ data: Record<string, unknown> }>({
+        path: "sys/capabilities-self",
+        method: "POST",
+        namespace,
+        body: { paths: unique },
+      });
+      const out: Record<string, string[]> = {};
+      for (const p of unique) {
+        const v = res.data[p];
+        out[p] = Array.isArray(v) ? (v as string[]) : [];
+      }
+      return out;
+    },
+  });
 }

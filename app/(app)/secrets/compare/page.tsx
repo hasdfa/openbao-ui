@@ -6,10 +6,11 @@ import { useQuery } from "@tanstack/react-query";
 import * as React from "react";
 
 import { PageHeader } from "@/components/page-header";
+import { QueryError } from "@/components/query-error";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { baoFetch } from "@/lib/bao-client";
+import { baoFetch, BaoError } from "@/lib/bao-client";
 import { useMounts } from "@/lib/kv";
 import { labelKey, useLabels } from "@/lib/labels";
 import { useNamespace } from "@/lib/namespace";
@@ -73,8 +74,11 @@ export default function ComparePage() {
             });
             const fields = v2 ? (res.data?.data ?? {}) : (res.data ?? {});
             return { mount, data: fields, missing: false };
-          } catch {
-            return { mount, data: null, missing: true };
+          } catch (err) {
+            if (err instanceof BaoError && err.status === 404) {
+              return { mount, data: null, missing: true };
+            }
+            throw err;
           }
         }),
       );
@@ -148,7 +152,9 @@ export default function ComparePage() {
         </div>
       </form>
 
-      {compare.isFetching ? (
+      {compare.isError ? (
+        <QueryError error={compare.error} what="secrets in the selected environments" />
+      ) : compare.isFetching ? (
         <p className="text-sm text-muted-foreground">Comparing…</p>
       ) : query && cols.length ? (
         <div className="overflow-hidden rounded-xl border">

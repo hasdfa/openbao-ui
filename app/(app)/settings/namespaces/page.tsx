@@ -4,9 +4,10 @@ import { Layers, Pencil, Plus, Trash2 } from "lucide-react";
 import * as React from "react";
 
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { QueryError } from "@/components/query-error";
 import { ColorDot, LabelEditor } from "@/components/label-editor";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogHeader } from "@/components/ui/dialog";
+import { Dialog, DialogHeader, DialogCancel } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { BaoError } from "@/lib/bao-client";
@@ -35,7 +36,7 @@ export default function NamespacesPage() {
   const [editing, setEditing] = React.useState<string | null>(null);
 
   return (
-    <div className="mx-auto max-w-3xl p-8">
+    <div className="max-w-3xl px-4 py-6 md:px-8">
       <div className="mb-3 flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
           Workspaces (child namespaces) of <span className="font-mono text-foreground">{namespace || "root"}</span>.
@@ -48,6 +49,8 @@ export default function NamespacesPage() {
 
       {list.isLoading ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
+      ) : list.isError ? (
+        <QueryError error={list.error} what="child namespaces" />
       ) : (
         <ul className="divide-y rounded-md border">
           {(list.data ?? []).map((ns) => {
@@ -109,7 +112,7 @@ export default function NamespacesPage() {
             </div>
             {error ? <p className="text-sm text-destructive">{error}</p> : null}
             <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+              <DialogCancel onClose={() => setOpen(false)} />
               <Button type="submit" disabled={create.isPending}>Create</Button>
             </div>
           </form>
@@ -125,9 +128,10 @@ export default function NamespacesPage() {
         }}
         title={`Delete namespace "${removing}"?`}
         description="This permanently removes the namespace and everything inside it (mounts, policies, secrets)."
-        confirmText="delete"
+        confirmText={removing ?? undefined}
         confirmLabel="Delete namespace"
         pending={del.isPending}
+        error={del.error ? errMsg(del.error) : null}
       />
 
       {editing ? (
