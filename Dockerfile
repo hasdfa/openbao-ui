@@ -15,7 +15,7 @@
 #   docker build --build-arg OPENBAO_VERSION=2.7.0 .
 # Or override the whole ref to pin a digest:
 #   docker build --build-arg OPENBAO_IMAGE=quay.io/openbao/openbao@sha256:… .
-ARG OPENBAO_VERSION=2.7.0
+ARG OPENBAO_VERSION=2.7.2
 ARG OPENBAO_IMAGE=quay.io/openbao/openbao:${OPENBAO_VERSION}
 # The last OpenBao that can read `file` storage. Only the entrypoint's one-time
 # migration of volumes from older images runs it; drop once those are migrated.
